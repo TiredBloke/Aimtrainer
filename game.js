@@ -174,17 +174,15 @@ class Game {
         d = Math.max(0.01, Math.min(1, d));
 
         const scale  = 1 - d * GAME_CONFIG.CAMERA.PERSPECTIVE_SCALE;
-        const lookY  = this.camera.lookY || 0;
-        const lookX  = this.camera.lookX || 0;
 
-        // lookX pans the world left/right around the fixed crosshair
-        const adjustedX = wx - lookX;
-
-        // lookY shifts the horizon up/down
-        const horizonShift = lookY * this.height * 1.5;
-        const hy     = this.camera.horizonY + horizonShift;
+        // Targets always sit on the ground plane — use the fixed base horizon,
+        // never the lookY-shifted visual horizon (that's background only).
+        const hy     = this.camera.horizonY;
         const gh     = this.height - hy;
         const yDepth = (1 - d) * (1 - d);
+
+        // lookX shifts targets horizontally around the fixed crosshair
+        const adjustedX = wx - (this.camera.lookX || 0);
 
         const screenX = this.width  / 2 + adjustedX * this.width * 0.4 * scale;
         const screenY = hy + gh * yDepth - wy * 100 * scale;
