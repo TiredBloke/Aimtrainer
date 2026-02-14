@@ -55,7 +55,8 @@ class Renderer {
         grad.addColorStop(0.5, colors[1]);
         grad.addColorStop(1,   colors[2]);
         ctx.fillStyle = grad;
-        ctx.fillRect(0, 0, game.width, Math.max(0, hy));
+        // Fill from above screen top to handle looking up
+        ctx.fillRect(0, -200, game.width, hy + 200);
     }
 
     _ground() {
@@ -67,7 +68,8 @@ class Renderer {
         grad.addColorStop(0.4, colors[1]);
         grad.addColorStop(1,   colors[2]);
         ctx.fillStyle = grad;
-        ctx.fillRect(0, hy, game.width, game.height - hy);
+        // Fill from horizon to well below screen bottom to avoid gap at extreme angles
+        ctx.fillRect(0, hy, game.width, game.height - hy + 200);
     }
 
     _horizonLine() {

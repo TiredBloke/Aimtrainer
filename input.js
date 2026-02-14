@@ -31,8 +31,10 @@ class InputHandler {
         // Mouse move → pan camera when locked
         document.addEventListener('mousemove', e => {
             if (!this.locked) return;
-            game.camera.lookX += e.movementX * this.sensitivity;
-            game.camera.lookY  = Math.max(-0.3, Math.min(0.3,
+            game.camera.lookX = Math.max(-1.5, Math.min(1.5,
+                game.camera.lookX + e.movementX * this.sensitivity
+            ));
+            game.camera.lookY = Math.max(-0.12, Math.min(0.12,
                 game.camera.lookY + e.movementY * this.sensitivity * 0.5
             ));
         });
