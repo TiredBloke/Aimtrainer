@@ -1,11 +1,11 @@
 /**
  * renderer.js
  *
- * FPS camera model:
- *   - Crosshair is fixed at screen centre.
- *   - lookX pans targets left/right around the crosshair.
- *   - lookY tilts the sky/ground only — targets stay on the ground plane.
- *   - Breathing sway + recoil are a tiny ctx.translate screen-shake only.
+ * FPS model:
+ *   - lookX pans the world horizontally. Targets shift left/right.
+ *   - Crosshair moves freely on screen (input.crosshairX/Y).
+ *   - No vertical world movement. Targets are fixed to ground plane.
+ *   - Sky/ground/horizon are always at the same fixed Y positions.
  */
 
 class Renderer {
@@ -18,7 +18,7 @@ class Renderer {
         const { ctx, game } = this;
         const recoil = game.weapon.getRecoilOffset();
 
-        // Screen-shake only (breathing + recoil) — small, ~2px
+        // Tiny screen-shake only (breathing sway + recoil kick)
         ctx.save();
         ctx.translate(
             game.camera.sway.x + recoil.x,
@@ -35,8 +35,10 @@ class Renderer {
 
         ctx.restore();
 
-        // HUD: pure screen-space, never shakes
-        game.weapon.drawDynamicCrosshair(ctx, game.width / 2, game.height / 2);
+        // HUD — pure screen space, no transform
+        const cx = game.input ? game.input.crosshairX : game.width  / 2;
+        const cy = game.input ? game.input.crosshairY : game.height / 2;
+        game.weapon.drawDynamicCrosshair(ctx, cx, cy);
         this._debugPanel();
 
         if (game.input && !game.input.locked) {
@@ -44,53 +46,50 @@ class Renderer {
         }
     }
 
-    // ── Background — shifts with lookY ────────────────────────
+    // ── Background (always fixed Y) ───────────────────────────
 
     _sky() {
         const { ctx, game } = this;
-        const hy     = this._visibleHorizon();
+        const hy     = game.camera.horizonY;
         const colors = GAME_CONFIG.COLORS.SKY;
         const grad   = ctx.createLinearGradient(0, 0, 0, hy);
         grad.addColorStop(0,   colors[0]);
         grad.addColorStop(0.5, colors[1]);
         grad.addColorStop(1,   colors[2]);
         ctx.fillStyle = grad;
-        // Fill from above screen top to handle looking up
-        ctx.fillRect(0, -200, game.width, hy + 200);
+        ctx.fillRect(0, 0, game.width, hy);
     }
 
     _ground() {
         const { ctx, game } = this;
-        const hy     = this._visibleHorizon();
+        const hy     = game.camera.horizonY;
         const colors = GAME_CONFIG.COLORS.GROUND;
         const grad   = ctx.createLinearGradient(0, hy, 0, game.height);
         grad.addColorStop(0,   colors[0]);
         grad.addColorStop(0.4, colors[1]);
         grad.addColorStop(1,   colors[2]);
         ctx.fillStyle = grad;
-        // Fill from horizon to well below screen bottom to avoid gap at extreme angles
-        ctx.fillRect(0, hy, game.width, game.height - hy + 200);
+        ctx.fillRect(0, hy, game.width, game.height - hy);
     }
 
     _horizonLine() {
         const { ctx, game } = this;
-        const hy = this._visibleHorizon();
         ctx.strokeStyle = 'rgba(135,206,235,0.3)';
         ctx.lineWidth   = 2;
         ctx.beginPath();
-        ctx.moveTo(0,          hy);
-        ctx.lineTo(game.width, hy);
+        ctx.moveTo(0,          game.camera.horizonY);
+        ctx.lineTo(game.width, game.camera.horizonY);
         ctx.stroke();
     }
 
     _grid() {
         const { ctx, game } = this;
-        const hy  = this._visibleHorizon();
+        const hy  = game.camera.horizonY;
         const gh  = game.height - hy;
-        // Vanishing point follows horizontal look
+        // Vanishing point tracks horizontal look
         const vpx = game.width / 2 - (game.camera.lookX || 0) * game.width * 0.4;
 
-        // Horizontal lines
+        // Horizontal ground lines
         for (let i = 1; i <= 20; i++) {
             const t     = i / 20;
             const y     = hy + gh * (t * t);
@@ -103,11 +102,11 @@ class Renderer {
             ctx.stroke();
         }
 
-        // Vanishing lines
+        // Vanishing lines converging to looked-at point
         for (let i = 0; i < 14; i++) {
             const offset = (i - 6.5) * 90;
-            const alpha  = 0.1 + Math.abs(offset) / (game.width * 0.5) * 0.15;
-            ctx.strokeStyle = `rgba(139,115,85,${Math.min(0.5, alpha)})`;
+            const alpha  = Math.min(0.5, 0.1 + Math.abs(offset) / (game.width * 0.5) * 0.15);
+            ctx.strokeStyle = `rgba(139,115,85,${alpha})`;
             ctx.beginPath();
             ctx.moveTo(vpx + offset, game.height);
             ctx.lineTo(vpx,          hy);
@@ -169,7 +168,7 @@ class Renderer {
     _debugPanel() {
         const { ctx, game } = this;
         ctx.fillStyle = 'rgba(0,0,0,0.7)';
-        ctx.fillRect(10, 10, 240, 170);
+        ctx.fillRect(10, 10, 240, 150);
         ctx.font = '14px monospace';
         const locked = game.input?.locked ? '🟢 LOCKED' : '🔴 UNLOCKED';
         [
@@ -179,7 +178,6 @@ class Renderer {
             ['#fa0', `Recoil: ${game.weapon.recoil.current.toFixed(1)}px`],
             ['#fa0', `Spread: ${game.weapon.spread.current.toFixed(1)}px`],
             ['#0ff', `lookX: ${(game.camera.lookX||0).toFixed(3)}`],
-            ['#0ff', `lookY: ${(game.camera.lookY||0).toFixed(3)}`],
             ['#0ff', `Mouse: ${locked}`],
         ].forEach(([color, text], i) => {
             ctx.fillStyle = color;
@@ -189,28 +187,20 @@ class Renderer {
 
     _lockPrompt() {
         const { ctx, game } = this;
-        const w = 480, h = 60;
+        const w = 500, h = 60;
         const x = (game.width - w) / 2;
-        const y = (game.height - h) / 2 + 120;
+        const y = game.height / 2 + 80;
         ctx.fillStyle = 'rgba(0,0,0,0.75)';
         ctx.beginPath();
         ctx.roundRect(x, y, w, h, 10);
         ctx.fill();
-        ctx.fillStyle = '#fff';
-        ctx.font = 'bold 17px Arial';
-        ctx.textAlign = 'center';
-        ctx.fillText('🖱  Click anywhere to capture mouse and start aiming', game.width / 2, y + 24);
-        ctx.fillStyle = '#aaa';
-        ctx.font = '13px Arial';
-        ctx.fillText('Move to look  •  Click to shoot  •  Esc to release', game.width / 2, y + 46);
-        ctx.textAlign = 'left';
-    }
-
-    // ── Helper ────────────────────────────────────────────────
-
-    /** Horizon Y accounting for vertical look tilt */
-    _visibleHorizon() {
-        const lookY = this.game.camera.lookY || 0;
-        return this.game.camera.horizonY + lookY * this.game.height * 1.5;
+        ctx.fillStyle   = '#fff';
+        ctx.font        = 'bold 17px Arial';
+        ctx.textAlign   = 'center';
+        ctx.fillText('🖱  Click to capture mouse', game.width / 2, y + 24);
+        ctx.fillStyle   = '#aaa';
+        ctx.font        = '13px Arial';
+        ctx.fillText('Move to aim  •  Click to shoot  •  Esc to release', game.width / 2, y + 46);
+        ctx.textAlign   = 'left';
     }
 }

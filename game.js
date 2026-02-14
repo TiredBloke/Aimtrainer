@@ -26,8 +26,7 @@ class Game {
         this.camera = {
             horizonY: 0,
             sway:  { x: 0, y: 0 },
-            lookX: 0,   // Horizontal pan driven by mouse
-            lookY: 0    // Vertical tilt driven by mouse
+            lookX: 0   // Horizontal pan driven by mouse
         };
 
         // Lighting (read by Renderer and Target)
@@ -174,14 +173,11 @@ class Game {
         d = Math.max(0.01, Math.min(1, d));
 
         const scale  = 1 - d * GAME_CONFIG.CAMERA.PERSPECTIVE_SCALE;
-
-        // Targets always sit on the ground plane — use the fixed base horizon,
-        // never the lookY-shifted visual horizon (that's background only).
-        const hy     = this.camera.horizonY;
+        const hy     = this.camera.horizonY;   // always fixed
         const gh     = this.height - hy;
         const yDepth = (1 - d) * (1 - d);
 
-        // lookX shifts targets horizontally around the fixed crosshair
+        // lookX shifts targets horizontally so crosshair can reach them
         const adjustedX = wx - (this.camera.lookX || 0);
 
         const screenX = this.width  / 2 + adjustedX * this.width * 0.4 * scale;
@@ -197,8 +193,6 @@ class Game {
     // ── Hit detection ─────────────────────────────────────────
 
     checkTargetHit(cx, cy, spreadOffset) {
-        // worldToScreen already applies lookX/Y, so targets rendered at screen
-        // position P are hit-tested directly against screen centre + spread.
         const sx = cx + spreadOffset.x;
         const sy = cy + spreadOffset.y;
 
@@ -406,8 +400,13 @@ class Game {
     // ── Helpers ───────────────────────────────────────────────
 
     _reset() {
-        this.stats     = this._blankStats();
-        this.particles = [];
+        this.stats          = this._blankStats();
+        this.particles      = [];
+        this.camera.lookX   = 0;
+        if (this.input) {
+            this.input.crosshairX = this.width  / 2;
+            this.input.crosshairY = this.height / 2;
+        }
         this.ui.resetStats();
         this.weapon.reset();
     }
