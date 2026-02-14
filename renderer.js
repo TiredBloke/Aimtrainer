@@ -17,7 +17,6 @@ class Renderer {
     render() {
         const { ctx, game } = this;
 
-        // No world translate at all — world is completely fixed
         ctx.clearRect(0, 0, game.width, game.height);
 
         this._sky();
@@ -27,14 +26,8 @@ class Renderer {
         this._targetsWithShadows();
         this._particles();
 
-        // Crosshair gets the subtle sway + recoil applied to it
-        // (much more natural than moving the whole world)
-        const recoil = game.weapon.getRecoilOffset();
-        const cx = (game.input ? game.input.crosshairX : game.width  / 2)
-                   + game.camera.sway.x + recoil.x;
-        const cy = (game.input ? game.input.crosshairY : game.height / 2)
-                   + game.camera.sway.y + recoil.y;
-
+        const cx = game.input ? game.input.crosshairX : game.width  / 2;
+        const cy = game.input ? game.input.crosshairY : game.height / 2;
         game.weapon.drawDynamicCrosshair(ctx, cx, cy);
         this._debugPanel();
 

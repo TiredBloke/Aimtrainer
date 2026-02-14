@@ -8,10 +8,8 @@ const GAME_CONFIG = {
 
     // ── Camera ────────────────────────────────────────────────
     CAMERA: {
-        HORIZON_RATIO: 0.45,   // Horizon at 45% of screen height
-        PERSPECTIVE_SCALE: 0.95, // How much scale shrinks at horizon
-        SWAY_SPEED: 0.8,        // Breathing cycle (Hz)
-        SWAY_AMPLITUDE: 2       // Breathing peak offset (px)
+        HORIZON_RATIO: 0.45,
+        PERSPECTIVE_SCALE: 0.95
     },
 
     // ── Lighting & Fog ────────────────────────────────────────

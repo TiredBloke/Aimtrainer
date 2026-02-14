@@ -24,8 +24,7 @@ class Game {
 
         // Camera
         this.camera = {
-            horizonY: 0,
-            sway: { x: 0, y: 0 }
+            horizonY: 0
         };
 
         // Lighting (read by Renderer and Target)
@@ -104,7 +103,6 @@ class Game {
     // ── Update ────────────────────────────────────────────────
 
     _update(dt) {
-        this._updateSway(dt);
         this.weapon.update(dt);
 
         if (this.timer.active) {
@@ -116,12 +114,6 @@ class Game {
         this.targets.forEach(t => t.update(dt, this.totalTime));
         this._updateParticles(dt);
         this._handleRespawns(dt);
-    }
-
-    _updateSway(dt) {
-        const C = GAME_CONFIG.CAMERA;
-        this.camera.sway.x = Math.sin(this.totalTime * C.SWAY_SPEED * 1.3) * C.SWAY_AMPLITUDE * 0.4;
-        this.camera.sway.y = Math.sin(this.totalTime * C.SWAY_SPEED)       * C.SWAY_AMPLITUDE;
     }
 
     _updateParticles(dt) {
