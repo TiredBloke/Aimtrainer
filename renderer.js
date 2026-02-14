@@ -16,15 +16,9 @@ class Renderer {
 
     render() {
         const { ctx, game } = this;
-        const recoil = game.weapon.getRecoilOffset();
 
-        // Tiny screen-shake only (breathing sway + recoil kick)
-        ctx.save();
-        ctx.translate(
-            game.camera.sway.x + recoil.x,
-            game.camera.sway.y + recoil.y
-        );
-        ctx.clearRect(-50, -50, game.width + 100, game.height + 100);
+        // No world translate at all — world is completely fixed
+        ctx.clearRect(0, 0, game.width, game.height);
 
         this._sky();
         this._ground();
@@ -33,11 +27,14 @@ class Renderer {
         this._targetsWithShadows();
         this._particles();
 
-        ctx.restore();
+        // Crosshair gets the subtle sway + recoil applied to it
+        // (much more natural than moving the whole world)
+        const recoil = game.weapon.getRecoilOffset();
+        const cx = (game.input ? game.input.crosshairX : game.width  / 2)
+                   + game.camera.sway.x + recoil.x;
+        const cy = (game.input ? game.input.crosshairY : game.height / 2)
+                   + game.camera.sway.y + recoil.y;
 
-        // HUD — pure screen space, no transform
-        const cx = game.input ? game.input.crosshairX : game.width  / 2;
-        const cy = game.input ? game.input.crosshairY : game.height / 2;
         game.weapon.drawDynamicCrosshair(ctx, cx, cy);
         this._debugPanel();
 
