@@ -179,15 +179,11 @@ class Game {
         const screenY = this.camera.horizonY + gh * yDepth - wy * 100 * scale;
         const screenX = this.width / 2 + wx * this.width * 0.4 * scale;
 
-        // Apply mouse look: shift everything opposite to gaze direction
-        const lx = screenX - this.camera.lookX * this.width * 0.5;
-        const ly = screenY - this.camera.lookY * this.height * 1.2;
-
         const FL  = GAME_CONFIG.LIGHTING;
         const fog = d < FL.FOG_NEAR ? 0
                   : Math.min(1, (d - FL.FOG_NEAR) / (FL.FOG_FAR - FL.FOG_NEAR));
 
-        return { x: lx, y: ly, scale, fogAmount: fog };
+        return { x: screenX, y: screenY, scale, fogAmount: fog };
     }
 
     // ── Hit detection ─────────────────────────────────────────

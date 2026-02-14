@@ -14,13 +14,13 @@ class Renderer {
         const { ctx, game } = this;
         const recoil = game.weapon.getRecoilOffset();
 
-        // Combine breathing sway + recoil + mouse look for scene transform
-        const shiftX = game.camera.sway.x + recoil.x - game.camera.lookX * game.width  * 0.5;
-        const shiftY = game.camera.sway.y + recoil.y - game.camera.lookY * game.height * 1.2;
+        // Scene shifts opposite to gaze direction so targets move into crosshair
+        const shiftX = game.camera.sway.x + recoil.x - game.camera.lookX * game.width;
+        const shiftY = game.camera.sway.y + recoil.y - game.camera.lookY * game.height;
 
         ctx.save();
         ctx.translate(shiftX, shiftY);
-        ctx.clearRect(-200, -200, game.width + 400, game.height + 400);
+        ctx.clearRect(-game.width, -game.height, game.width * 3, game.height * 3);
 
         this._sky();
         this._ground();
@@ -180,16 +180,19 @@ class Renderer {
     _debugPanel() {
         const { ctx, game } = this;
         ctx.fillStyle = 'rgba(0,0,0,0.7)';
-        ctx.fillRect(10, 10, 225, 145);
+        ctx.fillRect(10, 10, 240, 170);
 
         ctx.font = '14px monospace';
+        const locked = game.input?.locked ? '🟢 LOCKED' : '🔴 UNLOCKED';
         const lines = [
             ['#0f0', `FPS: ${game.fps}`],
-            ['#0f0', `Delta: ${(game.deltaTime * 1000).toFixed(1)}ms`],
             ['#0f0', `Canvas: ${game.width}×${game.height}`],
             ['#0f0', `Targets: ${game.targets.length}  Particles: ${game.particles.length}`],
             ['#fa0', `Recoil: ${game.weapon.recoil.current.toFixed(1)}px`],
             ['#fa0', `Spread: ${game.weapon.spread.current.toFixed(1)}px`],
+            ['#0ff', `lookX: ${(game.camera.lookX||0).toFixed(3)}`],
+            ['#0ff', `lookY: ${(game.camera.lookY||0).toFixed(3)}`],
+            ['#0ff', `Mouse: ${locked}`],
         ];
         lines.forEach(([color, text], i) => {
             ctx.fillStyle = color;
