@@ -46,6 +46,14 @@ class InputHandler {
         });
 
         document.addEventListener('contextmenu', e => e.preventDefault());
+
+        // Escape → release mouse and return to main menu
+        document.addEventListener('keydown', e => {
+            if (e.key === 'Escape') {
+                document.exitPointerLock();
+                game.ui.showModePanel();
+            }
+        });
     }
 
     _updateCenter() {

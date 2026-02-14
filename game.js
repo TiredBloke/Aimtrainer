@@ -142,13 +142,11 @@ class Game {
             return;
         }
 
-        // All other timed modes: reset fallen targets
-        if (this.timer.active) {
-            this.targets.forEach(t => {
-                if (t.isFalling && t.fallAngle <= -88 && t.fallTimer > GAME_CONFIG.TARGET.RESET_DELAY)
-                    t.reset();
-            });
-        }
+        // Reset fallen targets in all modes (including freeplay)
+        this.targets.forEach(t => {
+            if (t.isFalling && t.fallAngle <= -88 && t.fallTimer > GAME_CONFIG.TARGET.RESET_DELAY)
+                t.reset();
+        });
     }
 
     // ── Coordinate transform ──────────────────────────────────
