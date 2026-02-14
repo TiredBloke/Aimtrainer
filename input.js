@@ -12,11 +12,12 @@ class InputHandler {
         this._updateCenter();
         window.addEventListener('resize', () => this._updateCenter());
 
-        game.canvas.addEventListener('mousedown', e => {
+        // Attach to document so the UI overlay div never silently eats the click
+        document.addEventListener('mousedown', e => {
             if (e.button === 0) this._fire();
         });
 
-        game.canvas.addEventListener('contextmenu', e => e.preventDefault());
+        document.addEventListener('contextmenu', e => e.preventDefault());
     }
 
     // ── Private ───────────────────────────────────────────────
@@ -27,6 +28,8 @@ class InputHandler {
     }
 
     _fire() {
+        // Don't shoot when clicking UI buttons or panels
+        if (event.target.closest('button, #mode-panel, #gameover-panel')) return;
         if (!this.canFire || !this.game.weapon.canFire()) return;
 
         // Get spread offset from weapon
