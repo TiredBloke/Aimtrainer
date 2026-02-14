@@ -152,6 +152,9 @@ class UIManager {
     // ── Game-over screen ──────────────────────────────────────
 
     showGameOver(finalStats) {
+        // Release pointer lock so buttons are clickable — suppress menu popup
+        if (this.game.input) this.game.input._suppressMenu = true;
+        document.exitPointerLock();
         const reactionBlock = finalStats.avgReaction > 0 ? `
             <div class="reaction-stats-section">
                 <h3>Reaction Time</h3>

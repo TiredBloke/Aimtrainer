@@ -9,7 +9,8 @@ class InputHandler {
     constructor(game) {
         this.game        = game;
         this.canFire     = true;
-        this.locked      = false;
+        this.locked          = false;
+        this._suppressMenu   = false; // true when we release lock programmatically
         this.sensitivity = 1.0; // 1:1 pixel movement
 
         this.crosshairX  = 0;
@@ -19,7 +20,13 @@ class InputHandler {
         window.addEventListener('resize', () => this._updateCenter());
 
         document.addEventListener('pointerlockchange', () => {
+            const wasLocked = this.locked;
             this.locked = !!document.pointerLockElement;
+            // Escape pressed by user (not programmatic release) → show main menu
+            if (wasLocked && !this.locked && !this._suppressMenu) {
+                game.ui.showModePanel();
+            }
+            this._suppressMenu = false;
         });
 
         document.addEventListener('click', e => {
@@ -46,14 +53,6 @@ class InputHandler {
         });
 
         document.addEventListener('contextmenu', e => e.preventDefault());
-
-        // Escape → release mouse and return to main menu
-        document.addEventListener('keydown', e => {
-            if (e.key === 'Escape') {
-                document.exitPointerLock();
-                game.ui.showModePanel();
-            }
-        });
     }
 
     _updateCenter() {

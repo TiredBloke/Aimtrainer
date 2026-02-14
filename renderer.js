@@ -36,39 +36,113 @@ class Renderer {
         }
     }
 
-    // ── Background (always fixed Y) ───────────────────────────
+    // ── Background ────────────────────────────────────────────
 
     _sky() {
         const { ctx, game } = this;
-        const hy     = game.camera.horizonY;
-        const colors = GAME_CONFIG.COLORS.SKY;
-        const grad   = ctx.createLinearGradient(0, 0, 0, hy);
-        grad.addColorStop(0,   colors[0]);
-        grad.addColorStop(0.5, colors[1]);
-        grad.addColorStop(1,   colors[2]);
+        const hy = game.camera.horizonY;
+        const w  = game.width;
+
+        // Deep sky gradient - dark blue at top, bright hazy blue at horizon
+        const grad = ctx.createLinearGradient(0, 0, 0, hy);
+        grad.addColorStop(0,    '#1a3a5c');
+        grad.addColorStop(0.3,  '#2e6094');
+        grad.addColorStop(0.7,  '#5b9ec9');
+        grad.addColorStop(1,    '#c9e8f5');
         ctx.fillStyle = grad;
-        ctx.fillRect(0, 0, game.width, hy);
+        ctx.fillRect(0, 0, w, hy);
+
+        // Sun
+        const sunX = w * 0.72;
+        const sunY = hy * 0.28;
+        const sunGrad = ctx.createRadialGradient(sunX, sunY, 0, sunX, sunY, 80);
+        sunGrad.addColorStop(0,   'rgba(255,255,220,1)');
+        sunGrad.addColorStop(0.1, 'rgba(255,240,150,0.9)');
+        sunGrad.addColorStop(0.4, 'rgba(255,200,80,0.3)');
+        sunGrad.addColorStop(1,   'rgba(255,180,50,0)');
+        ctx.fillStyle = sunGrad;
+        ctx.beginPath();
+        ctx.arc(sunX, sunY, 80, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Atmospheric haze at horizon
+        const hazeGrad = ctx.createLinearGradient(0, hy * 0.6, 0, hy);
+        hazeGrad.addColorStop(0, 'rgba(200,230,255,0)');
+        hazeGrad.addColorStop(1, 'rgba(220,240,255,0.5)');
+        ctx.fillStyle = hazeGrad;
+        ctx.fillRect(0, hy * 0.6, w, hy * 0.4);
+
+        // Simple clouds
+        this._clouds(ctx, w, hy);
+    }
+
+    _clouds(ctx, w, hy) {
+        // Deterministic clouds based on fixed positions
+        const clouds = [
+            { x: 0.12, y: 0.22, r: 55 },
+            { x: 0.28, y: 0.15, r: 40 },
+            { x: 0.45, y: 0.30, r: 65 },
+            { x: 0.63, y: 0.18, r: 45 },
+            { x: 0.80, y: 0.25, r: 50 },
+            { x: 0.92, y: 0.12, r: 35 },
+        ];
+        clouds.forEach(c => {
+            const cx = c.x * w;
+            const cy = c.y * hy;
+            const r  = c.r;
+            const g  = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+            g.addColorStop(0,   'rgba(255,255,255,0.92)');
+            g.addColorStop(0.5, 'rgba(240,248,255,0.7)');
+            g.addColorStop(1,   'rgba(220,235,255,0)');
+            ctx.fillStyle = g;
+            // Puff shape: several overlapping circles
+            [[0,0,1],[r*0.5,-r*0.2,0.75],[-r*0.45,-r*0.15,0.7],[r*0.25,-r*0.4,0.6]].forEach(([ox,oy,s]) => {
+                ctx.beginPath();
+                ctx.arc(cx+ox, cy+oy, r*s, 0, Math.PI*2);
+                ctx.fillStyle = `rgba(255,255,255,${0.55*s})`;
+                ctx.fill();
+            });
+        });
     }
 
     _ground() {
         const { ctx, game } = this;
-        const hy     = game.camera.horizonY;
-        const colors = GAME_CONFIG.COLORS.GROUND;
-        const grad   = ctx.createLinearGradient(0, hy, 0, game.height);
-        grad.addColorStop(0,   colors[0]);
-        grad.addColorStop(0.4, colors[1]);
-        grad.addColorStop(1,   colors[2]);
+        const hy = game.camera.horizonY;
+        const w  = game.width;
+        const h  = game.height - hy;
+
+        // Base dirt gradient
+        const grad = ctx.createLinearGradient(0, hy, 0, game.height);
+        grad.addColorStop(0,    '#b8a070');
+        grad.addColorStop(0.08, '#8B6F47');
+        grad.addColorStop(0.4,  '#6B5033');
+        grad.addColorStop(1,    '#3d2b1a');
         ctx.fillStyle = grad;
-        ctx.fillRect(0, hy, game.width, game.height - hy);
+        ctx.fillRect(0, hy, w, h);
+
+        // Grass strip along the horizon
+        const grassGrad = ctx.createLinearGradient(0, hy, 0, hy + 18);
+        grassGrad.addColorStop(0, '#5a7a3a');
+        grassGrad.addColorStop(1, '#3d5c28');
+        ctx.fillStyle = grassGrad;
+        ctx.fillRect(0, hy, w, 18);
+
+        // Ground fog/haze near horizon
+        const fogGrad = ctx.createLinearGradient(0, hy, 0, hy + h * 0.25);
+        fogGrad.addColorStop(0, 'rgba(200,220,200,0.35)');
+        fogGrad.addColorStop(1, 'rgba(200,220,200,0)');
+        ctx.fillStyle = fogGrad;
+        ctx.fillRect(0, hy, w, h * 0.25);
     }
 
     _horizonLine() {
+        // Subtle horizon — the grass strip handles the visual separation
         const { ctx, game } = this;
-        ctx.strokeStyle = 'rgba(135,206,235,0.3)';
-        ctx.lineWidth   = 2;
+        ctx.strokeStyle = 'rgba(90,122,58,0.6)';
+        ctx.lineWidth   = 1;
         ctx.beginPath();
-        ctx.moveTo(0,          game.camera.horizonY);
-        ctx.lineTo(game.width, game.camera.horizonY);
+        ctx.moveTo(0,              game.camera.horizonY);
+        ctx.lineTo(game.width,     game.camera.horizonY);
         ctx.stroke();
     }
 
@@ -81,8 +155,8 @@ class Renderer {
         for (let i = 1; i <= 20; i++) {
             const t     = i / 20;
             const y     = hy + gh * (t * t);
-            const alpha = 0.08 + t * 0.35;
-            ctx.strokeStyle = `rgba(139,115,85,${alpha})`;
+            const alpha = 0.06 + t * 0.2;
+            ctx.strokeStyle = `rgba(80,55,30,${alpha})`;
             ctx.lineWidth   = 1;
             ctx.beginPath();
             ctx.moveTo(0, y);
@@ -92,8 +166,8 @@ class Renderer {
 
         for (let i = 0; i < 14; i++) {
             const offset = (i - 6.5) * 90;
-            const alpha  = Math.min(0.5, 0.1 + Math.abs(offset) / (game.width * 0.5) * 0.15);
-            ctx.strokeStyle = `rgba(139,115,85,${alpha})`;
+            const alpha  = Math.min(0.3, 0.05 + Math.abs(offset) / (game.width * 0.5) * 0.1);
+            ctx.strokeStyle = `rgba(80,55,30,${alpha})`;
             ctx.beginPath();
             ctx.moveTo(vpx + offset, game.height);
             ctx.lineTo(vpx,          hy);

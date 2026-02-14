@@ -144,7 +144,7 @@ class Game {
 
         // Reset fallen targets in all modes (including freeplay)
         this.targets.forEach(t => {
-            if (t.isFalling && t.fallAngle <= -88 && t.fallTimer > GAME_CONFIG.TARGET.RESET_DELAY)
+            if (t.isFalling && t.fallAngle <= -89 && t.fallTimer > GAME_CONFIG.TARGET.RESET_DELAY)
                 t.reset();
         });
     }
