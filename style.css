@@ -1,0 +1,377 @@
+/* ============================================================
+   GLOBAL RESET & BASE
+   ============================================================ */
+*, *::before, *::after {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
+    background: #000;
+    font-family: 'Arial', sans-serif;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+/* ============================================================
+   CANVAS
+   ============================================================ */
+#gameCanvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    cursor: none;
+    background: #87CEEB;
+}
+
+/* ============================================================
+   UI OVERLAY
+   ============================================================ */
+#ui-overlay {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 100;
+    color: white;
+}
+
+#ui-overlay button {
+    pointer-events: all;
+    cursor: pointer;
+}
+
+/* ============================================================
+   STATS PANEL (top-right)
+   ============================================================ */
+#stats-panel {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    background: rgba(0, 0, 0, 0.7);
+    padding: 15px 20px;
+    border-radius: 8px;
+    border: 2px solid rgba(0, 255, 0, 0.3);
+    min-width: 200px;
+    font-family: 'Courier New', monospace;
+}
+
+.stat-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin: 7px 0;
+    font-size: 15px;
+}
+
+.stat-label { color: #aaa; }
+
+.stat-value {
+    color: #00ff00;
+    font-weight: bold;
+    min-width: 65px;
+    text-align: right;
+}
+
+.stat-divider {
+    height: 1px;
+    background: rgba(255,255,255,0.15);
+    margin: 10px 0;
+}
+
+.timer {
+    font-size: 20px;
+    text-shadow: 0 0 10px currentColor;
+}
+
+/* ============================================================
+   MODE SELECTION PANEL (centered modal)
+   ============================================================ */
+#mode-panel {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(0, 0, 0, 0.92);
+    padding: 40px 50px;
+    border-radius: 14px;
+    border: 3px solid rgba(0, 255, 0, 0.5);
+    text-align: center;
+    pointer-events: all;
+    box-shadow: 0 10px 50px rgba(0, 0, 0, 0.9);
+    max-width: 680px;
+    width: 90vw;
+    max-height: 90vh;
+    overflow-y: auto;
+}
+
+#mode-panel h2 {
+    font-size: 32px;
+    color: #00ff00;
+    text-shadow: 0 0 12px rgba(0, 255, 0, 0.5);
+    margin-bottom: 24px;
+}
+
+#mode-panel h3 {
+    font-size: 14px;
+    color: #666;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    margin: 20px 0 12px;
+}
+
+/* ============================================================
+   PERSISTENT STATS (inside mode panel)
+   ============================================================ */
+.persistent-stats {
+    background: rgba(0, 255, 0, 0.05);
+    border: 1px solid rgba(0, 255, 0, 0.2);
+    border-radius: 8px;
+    padding: 16px 20px;
+    margin-bottom: 24px;
+}
+
+.persistent-stats h3 {
+    color: #00ff00;
+    margin: 0 0 14px;
+    font-size: 13px;
+}
+
+.persistent-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.persistent-stat {
+    background: rgba(0,0,0,0.3);
+    border-radius: 6px;
+    padding: 10px;
+    text-align: center;
+}
+
+.persistent-stat-value {
+    font-size: 22px;
+    font-weight: bold;
+    color: #00ff00;
+    text-shadow: 0 0 8px rgba(0,255,0,0.4);
+    margin-bottom: 4px;
+}
+
+.persistent-stat-label {
+    font-size: 10px;
+    color: #888;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.stats-footer {
+    font-size: 11px;
+    color: #555;
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+}
+
+.no-stats {
+    color: #888;
+    font-size: 14px;
+    padding: 4px 0;
+}
+
+/* ============================================================
+   MODE SECTION BUTTONS
+   ============================================================ */
+.mode-section { margin: 16px 0; }
+
+.mode-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    justify-content: center;
+    margin: 10px 0;
+}
+
+.mode-btn {
+    padding: 13px 26px;
+    font-size: 16px;
+    font-weight: bold;
+    font-family: 'Arial', sans-serif;
+    background: rgba(0, 255, 0, 0.15);
+    border: 2px solid #00ff00;
+    color: #00ff00;
+    border-radius: 6px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    transition: background 0.2s, box-shadow 0.2s, transform 0.1s;
+}
+
+.mode-btn:hover {
+    background: rgba(0, 255, 0, 0.35);
+    box-shadow: 0 0 18px rgba(0, 255, 0, 0.6);
+}
+
+.mode-btn:active { transform: scale(0.96); }
+
+/* Drill buttons — orange */
+.drill-btn {
+    background: rgba(255, 165, 0, 0.15);
+    border-color: #ffaa00;
+    color: #ffaa00;
+    font-size: 13px;
+    padding: 11px 18px;
+}
+
+.drill-btn:hover {
+    background: rgba(255, 165, 0, 0.35);
+    box-shadow: 0 0 18px rgba(255, 165, 0, 0.5);
+}
+
+/* Preset buttons — purple */
+.preset-btn {
+    background: rgba(138, 43, 226, 0.15);
+    border-color: #8a2be2;
+    color: #c060ff;
+    font-size: 13px;
+    padding: 11px 18px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    min-width: 130px;
+}
+
+.preset-btn:hover {
+    background: rgba(138, 43, 226, 0.35);
+    box-shadow: 0 0 18px rgba(138, 43, 226, 0.5);
+}
+
+.preset-icon { font-size: 22px; }
+
+.mode-description {
+    margin-top: 18px;
+    color: #555;
+    font-size: 13px;
+}
+
+/* ============================================================
+   GAME OVER PANEL (centered modal)
+   ============================================================ */
+#gameover-panel {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(0, 0, 0, 0.95);
+    padding: 50px 60px;
+    border-radius: 14px;
+    border: 3px solid rgba(255, 215, 0, 0.7);
+    text-align: center;
+    pointer-events: all;
+    box-shadow: 0 10px 60px rgba(0, 0, 0, 0.95);
+    animation: slideIn 0.4s ease-out;
+}
+
+@keyframes slideIn {
+    from { opacity: 0; transform: translate(-50%, -58%); }
+    to   { opacity: 1; transform: translate(-50%, -50%); }
+}
+
+#gameover-panel h1 {
+    font-size: 46px;
+    color: #ffd700;
+    text-shadow: 0 0 20px rgba(255, 215, 0, 0.5);
+    margin-bottom: 28px;
+}
+
+.final-stats {
+    display: flex;
+    gap: 40px;
+    justify-content: center;
+    margin: 20px 0;
+}
+
+.final-stat-value {
+    font-size: 46px;
+    font-weight: bold;
+    color: #00ff00;
+    text-shadow: 0 0 14px rgba(0, 255, 0, 0.5);
+    margin-bottom: 8px;
+}
+
+.final-stat-label {
+    font-size: 12px;
+    color: #888;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+}
+
+/* Reaction time block inside game over */
+.reaction-stats-section {
+    margin: 24px 0;
+    padding: 18px 20px;
+    background: rgba(255,255,255,0.04);
+    border-radius: 8px;
+    border: 1px solid rgba(255,255,255,0.1);
+}
+
+.reaction-stats-section h3 {
+    font-size: 14px;
+    color: #ffaa00;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    margin-bottom: 14px;
+}
+
+.reaction-stats {
+    display: flex;
+    gap: 30px;
+    justify-content: center;
+}
+
+.reaction-stat-value {
+    font-size: 30px;
+    font-weight: bold;
+    color: #ffaa00;
+    text-shadow: 0 0 8px rgba(255,170,0,0.4);
+    margin-bottom: 6px;
+}
+
+.reaction-stat-value.best {
+    color: #00ffff;
+    text-shadow: 0 0 8px rgba(0,255,255,0.4);
+}
+
+.reaction-stat-label {
+    font-size: 11px;
+    color: #888;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+/* ============================================================
+   CROSSHAIR HINT
+   ============================================================ */
+#crosshair-hint {
+    position: absolute;
+    bottom: 100px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0, 0, 0, 0.8);
+    padding: 16px 26px;
+    border-radius: 8px;
+    border: 1px solid rgba(255,255,255,0.25);
+    text-align: center;
+    transition: opacity 1s;
+    pointer-events: none;
+}
+
+#crosshair-hint p {
+    font-size: 15px;
+    color: #ddd;
+    margin: 4px 0;
+}
