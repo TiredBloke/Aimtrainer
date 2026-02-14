@@ -1,9 +1,9 @@
 /**
  * input.js — Pointer lock mouse-look + shooting
- * 
- * lookX = horizontal camera pan (moves world left/right)
- * crosshairY = vertical crosshair position on screen (moves crosshair up/down)
- * Targets never move vertically — they are fixed to the ground plane.
+ *
+ * Mouse X → pans camera horizontally (lookX)  
+ * Mouse Y → moves crosshair vertically, clamped to ground area only
+ * Targets are fixed in world space. Crosshair moves to reach them.
  */
 
 class InputHandler {
@@ -13,43 +13,37 @@ class InputHandler {
         this.locked      = false;
         this.sensitivity = 0.002;
 
-        // Crosshair lives at screen centre by default
         this.crosshairX  = 0;
         this.crosshairY  = 0;
         this._updateCenter();
 
         window.addEventListener('resize', () => this._updateCenter());
 
-        // Pointer lock state
         document.addEventListener('pointerlockchange', () => {
             this.locked = !!document.pointerLockElement;
         });
 
-        // Click anywhere non-button → lock mouse
         document.addEventListener('click', e => {
             if (e.target.closest('button')) return;
             if (!this.locked) document.body.requestPointerLock();
         });
 
-        // Mouse move → pan world horizontally, move crosshair vertically
         document.addEventListener('mousemove', e => {
             if (!this.locked) return;
 
-            // Horizontal: pan the camera (world moves, crosshair stays centred X)
-            game.camera.lookX = Math.max(-1.5, Math.min(1.5,
+            // Horizontal pan — tight clamp so targets stay on screen
+            game.camera.lookX = Math.max(-0.8, Math.min(0.8,
                 game.camera.lookX + e.movementX * this.sensitivity
             ));
 
-            // Vertical: move crosshair up/down on screen only
-            this.crosshairY = Math.max(
-                game.height * 0.1,
-                Math.min(game.height * 0.9,
-                    this.crosshairY + e.movementY
-                )
-            );
+            // Vertical: crosshair moves, clamped strictly to ground area
+            const minY = game.camera.horizonY + 10;
+            const maxY = game.height - 20;
+            this.crosshairY = Math.max(minY, Math.min(maxY,
+                this.crosshairY + e.movementY * 0.8
+            ));
         });
 
-        // Shoot at crosshair position
         document.addEventListener('mousedown', e => {
             if (e.button !== 0) return;
             if (e.target.closest('button')) return;
@@ -61,7 +55,9 @@ class InputHandler {
 
     _updateCenter() {
         this.crosshairX = this.game.width  / 2;
-        this.crosshairY = this.game.height / 2;
+        // Start crosshair in the middle of the ground area
+        const hy = this.game.camera.horizonY || this.game.height * 0.45;
+        this.crosshairY = hy + (this.game.height - hy) * 0.4;
     }
 
     _fire() {

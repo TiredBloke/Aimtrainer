@@ -173,11 +173,10 @@ class Game {
         d = Math.max(0.01, Math.min(1, d));
 
         const scale  = 1 - d * GAME_CONFIG.CAMERA.PERSPECTIVE_SCALE;
-        const hy     = this.camera.horizonY;   // always fixed
+        const hy     = this.camera.horizonY;
         const gh     = this.height - hy;
         const yDepth = (1 - d) * (1 - d);
 
-        // lookX shifts targets horizontally so crosshair can reach them
         const adjustedX = wx - (this.camera.lookX || 0);
 
         const screenX = this.width  / 2 + adjustedX * this.width * 0.4 * scale;
@@ -405,7 +404,8 @@ class Game {
         this.camera.lookX   = 0;
         if (this.input) {
             this.input.crosshairX = this.width  / 2;
-            this.input.crosshairY = this.height / 2;
+            const hy = this.camera.horizonY;
+            this.input.crosshairY = hy + (this.height - hy) * 0.4;
         }
         this.ui.resetStats();
         this.weapon.reset();
