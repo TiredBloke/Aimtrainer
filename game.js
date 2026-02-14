@@ -25,8 +25,7 @@ class Game {
         // Camera
         this.camera = {
             horizonY: 0,
-            sway:  { x: 0, y: 0 },
-            lookX: 0   // Horizontal pan driven by mouse
+            sway: { x: 0, y: 0 }
         };
 
         // Lighting (read by Renderer and Target)
@@ -177,9 +176,7 @@ class Game {
         const gh     = this.height - hy;
         const yDepth = (1 - d) * (1 - d);
 
-        const adjustedX = wx - (this.camera.lookX || 0);
-
-        const screenX = this.width  / 2 + adjustedX * this.width * 0.4 * scale;
+        const screenX = this.width  / 2 + wx * this.width * 0.4 * scale;
         const screenY = hy + gh * yDepth - wy * 100 * scale;
 
         const FL  = GAME_CONFIG.LIGHTING;
@@ -399,9 +396,8 @@ class Game {
     // ── Helpers ───────────────────────────────────────────────
 
     _reset() {
-        this.stats          = this._blankStats();
-        this.particles      = [];
-        this.camera.lookX   = 0;
+        this.stats     = this._blankStats();
+        this.particles = [];
         if (this.input) {
             this.input.crosshairX = this.width  / 2;
             const hy = this.camera.horizonY;

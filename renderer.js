@@ -86,10 +86,8 @@ class Renderer {
         const { ctx, game } = this;
         const hy  = game.camera.horizonY;
         const gh  = game.height - hy;
-        // Vanishing point tracks horizontal look
-        const vpx = game.width / 2 - (game.camera.lookX || 0) * game.width * 0.4;
+        const vpx = game.width / 2; // Fixed vanishing point at centre
 
-        // Horizontal ground lines
         for (let i = 1; i <= 20; i++) {
             const t     = i / 20;
             const y     = hy + gh * (t * t);
@@ -102,7 +100,6 @@ class Renderer {
             ctx.stroke();
         }
 
-        // Vanishing lines converging to looked-at point
         for (let i = 0; i < 14; i++) {
             const offset = (i - 6.5) * 90;
             const alpha  = Math.min(0.5, 0.1 + Math.abs(offset) / (game.width * 0.5) * 0.15);
@@ -177,7 +174,6 @@ class Renderer {
             ['#0f0', `Targets: ${game.targets.length}`],
             ['#fa0', `Recoil: ${game.weapon.recoil.current.toFixed(1)}px`],
             ['#fa0', `Spread: ${game.weapon.spread.current.toFixed(1)}px`],
-            ['#0ff', `lookX: ${(game.camera.lookX||0).toFixed(3)}`],
             ['#0ff', `Mouse: ${locked}`],
         ].forEach(([color, text], i) => {
             ctx.fillStyle = color;

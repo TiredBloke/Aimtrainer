@@ -1,9 +1,8 @@
 /**
- * input.js — Pointer lock mouse-look + shooting
- *
- * Mouse X → pans camera horizontally (lookX)  
- * Mouse Y → moves crosshair vertically, clamped to ground area only
- * Targets are fixed in world space. Crosshair moves to reach them.
+ * input.js — Free-moving crosshair over fixed world
+ * 
+ * The world never moves. The crosshair moves like a cursor,
+ * clamped to the ground area below the horizon.
  */
 
 class InputHandler {
@@ -11,7 +10,7 @@ class InputHandler {
         this.game        = game;
         this.canFire     = true;
         this.locked      = false;
-        this.sensitivity = 0.002;
+        this.sensitivity = 1.0; // 1:1 pixel movement
 
         this.crosshairX  = 0;
         this.crosshairY  = 0;
@@ -28,19 +27,15 @@ class InputHandler {
             if (!this.locked) document.body.requestPointerLock();
         });
 
+        // Crosshair moves freely across the whole screen
         document.addEventListener('mousemove', e => {
             if (!this.locked) return;
 
-            // Horizontal pan — tight clamp so targets stay on screen
-            game.camera.lookX = Math.max(-0.8, Math.min(0.8,
-                game.camera.lookX + e.movementX * this.sensitivity
+            this.crosshairX = Math.max(10, Math.min(game.width - 10,
+                this.crosshairX + e.movementX * this.sensitivity
             ));
-
-            // Vertical: crosshair moves, clamped strictly to ground area
-            const minY = game.camera.horizonY + 10;
-            const maxY = game.height - 20;
-            this.crosshairY = Math.max(minY, Math.min(maxY,
-                this.crosshairY + e.movementY * 0.8
+            this.crosshairY = Math.max(10, Math.min(game.height - 10,
+                this.crosshairY + e.movementY * this.sensitivity
             ));
         });
 
@@ -55,7 +50,6 @@ class InputHandler {
 
     _updateCenter() {
         this.crosshairX = this.game.width  / 2;
-        // Start crosshair in the middle of the ground area
         const hy = this.game.camera.horizonY || this.game.height * 0.45;
         this.crosshairY = hy + (this.game.height - hy) * 0.4;
     }
