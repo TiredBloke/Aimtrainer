@@ -14,9 +14,13 @@ class Renderer {
         const { ctx, game } = this;
         const recoil = game.weapon.getRecoilOffset();
 
+        // Combine breathing sway + recoil + mouse look for scene transform
+        const shiftX = game.camera.sway.x + recoil.x - game.camera.lookX * game.width  * 0.5;
+        const shiftY = game.camera.sway.y + recoil.y - game.camera.lookY * game.height * 1.2;
+
         ctx.save();
-        ctx.translate(game.camera.sway.x + recoil.x, game.camera.sway.y + recoil.y);
-        ctx.clearRect(-100, -100, game.width + 200, game.height + 200);
+        ctx.translate(shiftX, shiftY);
+        ctx.clearRect(-200, -200, game.width + 400, game.height + 400);
 
         this._sky();
         this._ground();
@@ -27,9 +31,37 @@ class Renderer {
 
         ctx.restore();
 
-        // These are drawn in canvas-space (unaffected by camera shake)
+        // Crosshair and HUD always at screen centre (no camera transform)
         game.weapon.drawDynamicCrosshair(ctx, game.width / 2, game.height / 2);
         this._debugPanel();
+
+        // Overlay when pointer isn't locked
+        if (game.input && !game.input.locked) {
+            this._lockPrompt();
+        }
+    }
+
+    _lockPrompt() {
+        const { ctx, game } = this;
+        ctx.fillStyle = 'rgba(0,0,0,0.45)';
+        ctx.fillRect(0, 0, game.width, game.height);
+
+        ctx.fillStyle = 'rgba(0,0,0,0.75)';
+        const w = 360, h = 70;
+        const x = (game.width  - w) / 2;
+        const y = (game.height - h) / 2 + 80;
+        ctx.beginPath();
+        ctx.roundRect(x, y, w, h, 10);
+        ctx.fill();
+
+        ctx.fillStyle = '#fff';
+        ctx.font      = 'bold 18px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('🖱  Click to aim', game.width / 2, y + 30);
+        ctx.fillStyle = '#aaa';
+        ctx.font      = '14px Arial';
+        ctx.fillText('Press Esc to release mouse', game.width / 2, y + 54);
+        ctx.textAlign = 'left';
     }
 
     // ── Scene layers ──────────────────────────────────────────

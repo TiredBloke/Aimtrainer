@@ -25,7 +25,9 @@ class Game {
         // Camera
         this.camera = {
             horizonY: 0,
-            sway: { x: 0, y: 0 }
+            sway:  { x: 0, y: 0 },
+            lookX: 0,   // Horizontal pan driven by mouse
+            lookY: 0    // Vertical tilt driven by mouse
         };
 
         // Lighting (read by Renderer and Target)
@@ -173,23 +175,28 @@ class Game {
 
         const scale   = 1 - d * GAME_CONFIG.CAMERA.PERSPECTIVE_SCALE;
         const gh      = this.height - this.camera.horizonY;
-        const yDepth  = (1 - d) * (1 - d);               // ease-in-quad
+        const yDepth  = (1 - d) * (1 - d);
         const screenY = this.camera.horizonY + gh * yDepth - wy * 100 * scale;
         const screenX = this.width / 2 + wx * this.width * 0.4 * scale;
+
+        // Apply mouse look: shift everything opposite to gaze direction
+        const lx = screenX - this.camera.lookX * this.width * 0.5;
+        const ly = screenY - this.camera.lookY * this.height * 1.2;
 
         const FL  = GAME_CONFIG.LIGHTING;
         const fog = d < FL.FOG_NEAR ? 0
                   : Math.min(1, (d - FL.FOG_NEAR) / (FL.FOG_FAR - FL.FOG_NEAR));
 
-        return { x: screenX, y: screenY, scale, fogAmount: fog };
+        return { x: lx, y: ly, scale, fogAmount: fog };
     }
 
     // ── Hit detection ─────────────────────────────────────────
 
     checkTargetHit(cx, cy, spreadOffset) {
-        const recoil = this.weapon.getRecoilOffset();
-        const sx = cx + spreadOffset.x - this.camera.sway.x - recoil.x;
-        const sy = cy + spreadOffset.y - this.camera.sway.y - recoil.y;
+        // worldToScreen already applies lookX/Y, so targets rendered at screen
+        // position P are hit-tested directly against screen centre + spread.
+        const sx = cx + spreadOffset.x;
+        const sy = cy + spreadOffset.y;
 
         const sorted = [...this.targets].sort((a, b) => a.distance - b.distance);
 
@@ -200,7 +207,7 @@ class Game {
             }
         }
 
-        this._spawnDust(cx + spreadOffset.x, cy + spreadOffset.y);
+        this._spawnDust(sx, sy);
         return { hit: false, target: null, isCenterHit: false };
     }
 
