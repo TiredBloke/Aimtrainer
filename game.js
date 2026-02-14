@@ -173,11 +173,21 @@ class Game {
     worldToScreen(wx, wy, d) {
         d = Math.max(0.01, Math.min(1, d));
 
-        const scale   = 1 - d * GAME_CONFIG.CAMERA.PERSPECTIVE_SCALE;
-        const gh      = this.height - this.camera.horizonY;
-        const yDepth  = (1 - d) * (1 - d);
-        const screenY = this.camera.horizonY + gh * yDepth - wy * 100 * scale;
-        const screenX = this.width / 2 + wx * this.width * 0.4 * scale;
+        const scale  = 1 - d * GAME_CONFIG.CAMERA.PERSPECTIVE_SCALE;
+        const lookY  = this.camera.lookY || 0;
+        const lookX  = this.camera.lookX || 0;
+
+        // lookX pans the world left/right around the fixed crosshair
+        const adjustedX = wx - lookX;
+
+        // lookY shifts the horizon up/down
+        const horizonShift = lookY * this.height * 1.5;
+        const hy     = this.camera.horizonY + horizonShift;
+        const gh     = this.height - hy;
+        const yDepth = (1 - d) * (1 - d);
+
+        const screenX = this.width  / 2 + adjustedX * this.width * 0.4 * scale;
+        const screenY = hy + gh * yDepth - wy * 100 * scale;
 
         const FL  = GAME_CONFIG.LIGHTING;
         const fog = d < FL.FOG_NEAR ? 0
