@@ -33,7 +33,7 @@ class Renderer {
         this.renderer.shadowMap.enabled = true;
         this.renderer.shadowMap.type    = THREE.PCFSoftShadowMap;
         this.renderer.toneMapping       = THREE.ACESFilmicToneMapping;
-        this.renderer.toneMappingExposure = 1.2;
+        this.renderer.toneMappingExposure = 0.8;
 
         // Perspective camera — FOV 75, matches a typical FPS feel
         this.camera = new THREE.PerspectiveCamera(
@@ -42,9 +42,9 @@ class Renderer {
             0.01,
             2000
         );
-        // Eye height ~1.6m, looking slightly down the range
+        // Eye height ~1.6m, looking straight down the range
         this.camera.position.set(0, 1.6, 0);
-        this.camera.lookAt(0, 1.0, -10);
+        this.camera.lookAt(0, 1.4, -50);
 
         this.scene = new THREE.Scene();
     }
@@ -67,8 +67,8 @@ class Renderer {
                 horizonColor:{ value: new THREE.Color(0x9dd4f0) },
                 sunDir:      { value: new THREE.Vector3(0.6, 0.35, -0.7).normalize() },
                 sunColor:    { value: new THREE.Color(1.0, 0.95, 0.7) },
-                sunSize:     { value: 0.998 },   // cos of angular radius
-                sunGlowSize: { value: 0.97 },
+                sunSize:     { value: 0.9997 },
+                sunGlowSize: { value: 0.996 },
             },
             vertexShader: `
                 varying vec3 vWorldPos;
@@ -183,11 +183,11 @@ class Renderer {
         cv.width = cv.height = texSize;
         const cx = cv.getContext('2d');
 
-        // Base dirt colour
+        // Base dirt colour - dark earthy brown
         const grad = cx.createLinearGradient(0, 0, 0, texSize);
-        grad.addColorStop(0,    '#8a6a3a');
-        grad.addColorStop(0.3,  '#7a5a2e');
-        grad.addColorStop(1,    '#5a3e1e');
+        grad.addColorStop(0,    '#6b4e2a');
+        grad.addColorStop(0.3,  '#5a3e1e');
+        grad.addColorStop(1,    '#3a2810');
         cx.fillStyle = grad;
         cx.fillRect(0, 0, texSize, texSize);
 
@@ -225,24 +225,12 @@ class Renderer {
         ground.receiveShadow = true;
         this.scene.add(ground);
 
-        // Grass strip right at horizon line (slightly raised)
-        const grassGeo = new THREE.PlaneGeometry(2000, 8);
-        const grassCv  = document.createElement('canvas');
-        grassCv.width = 128; grassCv.height = 32;
-        const gcx = grassCv.getContext('2d');
-        const gg = gcx.createLinearGradient(0, 0, 0, 32);
-        gg.addColorStop(0,   '#6a9440');
-        gg.addColorStop(0.5, '#4e7a2c');
-        gg.addColorStop(1,   '#3a5e20');
-        gcx.fillStyle = gg;
-        gcx.fillRect(0, 0, 128, 32);
-        const grassTex = new THREE.CanvasTexture(grassCv);
-        grassTex.wrapS = THREE.RepeatWrapping;
-        grassTex.repeat.set(200, 1);
-        const grassMat  = new THREE.MeshBasicMaterial({ map: grassTex });
+        // Thin grass strip at the very edge of the range
+        const grassGeo  = new THREE.PlaneGeometry(2000, 2);
+        const grassMat  = new THREE.MeshLambertMaterial({ color: 0x4a7a28 });
         const grassMesh = new THREE.Mesh(grassGeo, grassMat);
         grassMesh.rotation.x = -Math.PI / 2;
-        grassMesh.position.set(0, 0.02, -8);
+        grassMesh.position.set(0, 0.01, -6);
         this.scene.add(grassMesh);
 
         // Range distance markers (poles at 10m, 25m, 50m, 100m)
@@ -336,12 +324,12 @@ class Renderer {
             const mesh = this.targets3d.get(target);
             if (!mesh) return;
 
-            // World coords to Three.js coords
-            // game.worldX: -1..1 maps to ~±12m
-            // game.distance: 0..1 maps to 5..100m depth
-            const x =  target.worldX * 12;
-            const z = -(5 + target.distance * 95);
-            const y =  1.0 + target.worldY * 3; // worldY 0=ground level eye height
+            // World coords → Three.js coords
+            // worldX: -1..1 → ±10m wide
+            // distance: 0..1 → 8..60m deep  (was 5..100, too far)
+            const x =  target.worldX * 10;
+            const z = -(8 + target.distance * 52);
+            const y =  1.0 + target.worldY * 3;
 
             if (target.isFalling) {
                 mesh.position.set(x, y, z);
