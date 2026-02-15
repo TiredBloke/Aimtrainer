@@ -22,10 +22,22 @@ body {
    ============================================================ */
 #gameCanvas {
     display: block;
+    position: absolute;
+    inset: 0;
     width: 100%;
     height: 100%;
+    background: #000;
+}
+
+#hudCanvas {
+    display: block;
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 10;
     cursor: none;
-    background: #87CEEB;
 }
 
 /* ============================================================
@@ -35,7 +47,7 @@ body {
     position: absolute;
     inset: 0;
     pointer-events: none;
-    z-index: 100;
+    z-index: 200;
     color: white;
 }
 

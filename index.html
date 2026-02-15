@@ -7,22 +7,26 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
+    <!-- Three.js renders into this canvas -->
     <canvas id="gameCanvas"></canvas>
+
+    <!-- 2D overlay canvas for crosshair only -->
+    <canvas id="hudCanvas"></canvas>
+
+    <!-- UI panels (mode select, stats, game over) -->
     <div id="ui-overlay"></div>
 
+    <!-- Three.js from CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
     <script src="config.js"></script>
-    
-    <script src="renderer.js"></script>
-    
-    <script src="target.js"></script>
-    <script src="weapon.js"></script>
-
-    <script src="audio.js"></script>
-    <script src="input.js"></script>
-
     <script src="stats.js"></script>
+    <script src="audio.js"></script>
+    <script src="weapon.js"></script>
+    <script src="target.js"></script>
+    <script src="input.js"></script>
+    <script src="renderer.js"></script>
     <script src="ui.js"></script>
-
     <script src="game.js"></script>
 </body>
 </html>

@@ -1,18 +1,14 @@
 /**
- * game.js — Core game loop, coordinate system, mode/preset management,
- *            particle system, hit detection, and stat recording.
- *
- * Rendering is delegated entirely to Renderer.
- * UI is delegated entirely to UIManager.
+ * game.js — Core game loop, mode management, hit detection, stats.
+ * Rendering delegated to Renderer (Three.js).
+ * Hit detection uses renderer.castRay() instead of worldToScreen.
  */
 
 class Game {
     constructor() {
-        // Canvas
-        this.canvas = document.getElementById('gameCanvas');
-        this.ctx    = this.canvas.getContext('2d');
-        this.width  = 0;
-        this.height = 0;
+        // Dimensions (still needed for crosshair clamping)
+        this.width  = window.innerWidth;
+        this.height = window.innerHeight;
 
         // Timing
         this.lastFrameTime = 0;
@@ -22,49 +18,41 @@ class Game {
         this._fpsTimer     = 0;
         this._fpsCount     = 0;
 
-        // Camera
-        this.camera = {
-            horizonY: 0
-        };
-
-        // Lighting (read by Renderer and Target)
-        this.lighting = GAME_CONFIG.LIGHTING;
+        // Camera stub — horizonY kept for input.js crosshair default position
+        this.camera = { horizonY: window.innerHeight * 0.45 };
 
         // Systems
-        this.audio       = new AudioManager();
-        this.weapon      = new Weapon();
+        this.audio        = new AudioManager();
+        this.weapon       = new Weapon();
         this.statsManager = new StatsManager();
 
         // Runtime state
-        this.targets      = [];
-        this.particles    = [];
-        this.mode         = 'freeplay';
-        this._lastMode    = 'freeplay';
-        this._lastPreset  = null;
+        this.targets   = [];
+        this.particles = []; // kept for audio/visual hooks, not rendered in 3D yet
+        this.mode      = 'freeplay';
+        this._lastMode   = 'freeplay';
+        this._lastPreset = null;
 
         this.timer = { active: false, remaining: 0 };
-
-        // Session stats (reset per mode)
         this.stats = this._blankStats();
 
-        // Preset spawn state
         this._presetCfg       = null;
         this._presetSpawnWait = 0;
+
+        window.addEventListener('resize', () => {
+            this.width  = window.innerWidth;
+            this.height = window.innerHeight;
+            this.camera.horizonY = this.height * 0.45;
+        });
 
         this._init();
     }
 
-    // ── Initialisation ────────────────────────────────────────
-
     _init() {
-        this._resizeCanvas();
-        window.addEventListener('resize', () => this._resizeCanvas());
-
         this.renderer = new Renderer(this);
         this.ui       = new UIManager(this);
         this.input    = new InputHandler(this);
 
-        // Audio requires a user gesture
         const onFirstClick = () => {
             this.audio.init();
             this.audio.resume();
@@ -85,7 +73,6 @@ class Game {
         this.lastFrameTime = timestamp;
         this.totalTime    += this.deltaTime;
 
-        // FPS counter
         this._fpsCount++;
         this._fpsTimer += this.deltaTime;
         if (this._fpsTimer >= 0.5) {
@@ -112,24 +99,10 @@ class Game {
         }
 
         this.targets.forEach(t => t.update(dt, this.totalTime));
-        this._updateParticles(dt);
         this._handleRespawns(dt);
     }
 
-    _updateParticles(dt) {
-        for (let i = this.particles.length - 1; i >= 0; i--) {
-            const p = this.particles[i];
-            p.x   += p.vx * dt;
-            p.y   += p.vy * dt;
-            p.vy  += p.gravity * dt;
-            if (p.drag) p.vx *= p.drag, p.vy *= p.drag;
-            p.life -= dt;
-            if (p.life <= 0) this.particles.splice(i, 1);
-        }
-    }
-
     _handleRespawns(dt) {
-        // Preset flick: swap target after it falls
         if (this._presetCfg?.key === 'flick') {
             const t = this.targets[0];
             if (!t || (t.isFalling && t.fallAngle <= -88)) {
@@ -142,56 +115,25 @@ class Game {
             return;
         }
 
-        // Reset fallen targets in all modes (including freeplay)
         this.targets.forEach(t => {
             if (t.isFalling && t.fallAngle <= -89 && t.fallTimer > GAME_CONFIG.TARGET.RESET_DELAY)
                 t.reset();
         });
     }
 
-    // ── Coordinate transform ──────────────────────────────────
-
-    /**
-     * Convert world coords to screen coords with perspective + fog.
-     * @param {number} wx  World X  (-1 … 1)
-     * @param {number} wy  World Y  (0 = ground)
-     * @param {number} d   Distance (0 = near, 1 = horizon)
-     * @returns {{ x, y, scale, fogAmount }}
-     */
-    worldToScreen(wx, wy, d) {
-        d = Math.max(0.01, Math.min(1, d));
-
-        const scale  = 1 - d * GAME_CONFIG.CAMERA.PERSPECTIVE_SCALE;
-        const hy     = this.camera.horizonY;
-        const gh     = this.height - hy;
-        const yDepth = (1 - d) * (1 - d);
-
-        const screenX = this.width  / 2 + wx * this.width * 0.4 * scale;
-        const screenY = hy + gh * yDepth - wy * 100 * scale;
-
-        const FL  = GAME_CONFIG.LIGHTING;
-        const fog = d < FL.FOG_NEAR ? 0
-                  : Math.min(1, (d - FL.FOG_NEAR) / (FL.FOG_FAR - FL.FOG_NEAR));
-
-        return { x: screenX, y: screenY, scale, fogAmount: fog };
-    }
-
-    // ── Hit detection ─────────────────────────────────────────
+    // ── Hit detection (raycasting via Three.js) ───────────────
 
     checkTargetHit(cx, cy, spreadOffset) {
         const sx = cx + spreadOffset.x;
         const sy = cy + spreadOffset.y;
 
-        const sorted = [...this.targets].sort((a, b) => a.distance - b.distance);
+        const result = this.renderer.castRay(sx, sy);
 
-        for (const t of sorted) {
-            if (t.checkHit(sx, sy, this)) {
-                this._spawnHitSparks(t.worldX, t.worldY, t.distance);
-                return { hit: true, target: t, isCenterHit: t.isCenterHit(sx, sy, this) };
-            }
+        if (result.hit) {
+            this._spawnHitSparks(result.target);
+            return result;
         }
 
-        this._spawnDust(sx, sy);
         return { hit: false, target: null, isCenterHit: false };
     }
 
@@ -206,13 +148,11 @@ class Game {
             if (reactionMs > 0 && reactionMs < 5000) {
                 s.reactionTimes.push(reactionMs);
                 if (reactionMs < s.bestReaction) s.bestReaction = reactionMs;
-
                 const sum = s.reactionTimes.reduce((a, b) => a + b, 0);
                 s.avgReaction = sum / s.reactionTimes.length;
-
                 if (s.reactionTimes.length > 1) {
                     const mean = s.avgReaction;
-                    const variance = s.reactionTimes.reduce((acc, t) => acc + (t - mean) ** 2, 0) / s.reactionTimes.length;
+                    const variance = s.reactionTimes.reduce((a, t) => a + (t - mean) ** 2, 0) / s.reactionTimes.length;
                     s.consistency = Math.sqrt(variance);
                 }
             }
@@ -261,9 +201,9 @@ class Game {
         this._reset();
         this.targets = [];
 
-        if (key === 'flick')          this._spawnFlickTarget();
-        else if (key === 'tracking')  this._spawnTrackingTargets(cfg);
-        else                          this._spawnMicroAdjustTargets(cfg);
+        if (key === 'flick')         this._spawnFlickTarget();
+        else if (key === 'tracking') this._spawnTrackingTargets(cfg);
+        else                         this._spawnMicroAdjustTargets(cfg);
 
         this.timer = { active: true, remaining: cfg.timerS };
         this.ui.showTimer();
@@ -275,8 +215,6 @@ class Game {
         else                  this.startMode(this._lastMode || 'timed');
     }
 
-    // ── Session end ───────────────────────────────────────────
-
     _endSession() {
         this.timer = { active: false, remaining: 0 };
         this.ui.updateTimer(0);
@@ -285,20 +223,15 @@ class Game {
         const accuracy = s.shots > 0 ? (s.hits / s.shots) * 100 : 0;
 
         this.statsManager.save({
-            mode:       this.mode,
-            shots:      s.shots,
-            hits:       s.hits,
-            accuracy,
-            reactionMs: s.bestReaction < Infinity ? s.bestReaction : null
+            mode: this.mode, shots: s.shots, hits: s.hits,
+            accuracy, reactionMs: s.bestReaction < Infinity ? s.bestReaction : null
         });
 
         this.ui.showGameOver({
-            shots:       s.shots,
-            hits:        s.hits,
-            accuracy,
-            avgReaction: s.avgReaction,
+            shots: s.shots, hits: s.hits, accuracy,
+            avgReaction:  s.avgReaction,
             bestReaction: s.bestReaction < Infinity ? s.bestReaction : 0,
-            consistency: s.consistency
+            consistency:  s.consistency
         });
     }
 
@@ -309,7 +242,7 @@ class Game {
         const layouts = GAME_CONFIG.DRILLS[drillKey] || GAME_CONFIG.DRILLS.static;
         layouts.forEach((cfg, i) => {
             const t = new Target(cfg.x, cfg.y, cfg.d, drillKey);
-            if (drillKey === 'peek') t.peek.hiddenFor = i * 0.4; // stagger
+            if (drillKey === 'peek') t.peek.hiddenFor = i * 0.4;
             this.targets.push(t);
         });
     }
@@ -338,49 +271,11 @@ class Game {
         });
     }
 
-    // ── Particle spawning ─────────────────────────────────────
+    // ── Particles (audio/visual triggers only in 3D) ──────────
 
-    _spawnHitSparks(wx, wy, dist) {
-        const pos = this.worldToScreen(wx, wy, dist);
-        const P   = GAME_CONFIG.PARTICLES.SPARK;
-        const n   = _randInt(P.COUNT[0], P.COUNT[1]);
-
-        for (let i = 0; i < n && this.particles.length < GAME_CONFIG.PARTICLES.MAX; i++) {
-            const angle = Math.random() * Math.PI * 2;
-            const speed = _rand(P.SPEED[0], P.SPEED[1]);
-            this.particles.push({
-                type: 'spark',
-                x: pos.x, y: pos.y,
-                vx: Math.cos(angle) * speed,
-                vy: Math.sin(angle) * speed - P.UP_BIAS,
-                gravity: P.GRAVITY,
-                life: _rand(P.LIFE[0], P.LIFE[1]),
-                maxLife: P.LIFE[1],
-                size: _rand(P.SIZE[0], P.SIZE[1])
-            });
-        }
-    }
-
-    _spawnDust(sx, sy) {
-        const P = GAME_CONFIG.PARTICLES.DUST;
-        const n = _randInt(P.COUNT[0], P.COUNT[1]);
-
-        for (let i = 0; i < n && this.particles.length < GAME_CONFIG.PARTICLES.MAX; i++) {
-            const angle = Math.random() * Math.PI - Math.PI / 2;
-            const speed = _rand(P.SPEED[0], P.SPEED[1]);
-            this.particles.push({
-                type: 'dust',
-                x: sx + (Math.random() - 0.5) * 20,
-                y: sy + (Math.random() - 0.5) * 10,
-                vx: Math.cos(angle) * speed,
-                vy: Math.sin(angle) * speed,
-                gravity: P.GRAVITY,
-                drag: P.DRAG,
-                life: _rand(P.LIFE[0], P.LIFE[1]),
-                maxLife: P.LIFE[1],
-                size: _rand(P.SIZE[0], P.SIZE[1])
-            });
-        }
+    _spawnHitSparks(target) {
+        // In 3D we handle this via target.impactFlash
+        // Audio cue is handled in input.js
     }
 
     // ── Helpers ───────────────────────────────────────────────
@@ -390,8 +285,7 @@ class Game {
         this.particles = [];
         if (this.input) {
             this.input.crosshairX = this.width  / 2;
-            const hy = this.camera.horizonY;
-            this.input.crosshairY = hy + (this.height - hy) * 0.4;
+            this.input.crosshairY = this.height * 0.6;
         }
         this.ui.resetStats();
         this.weapon.reset();
@@ -400,28 +294,9 @@ class Game {
     _blankStats() {
         return { shots: 0, hits: 0, reactionTimes: [], avgReaction: 0, bestReaction: Infinity, consistency: 0 };
     }
-
-    _resizeCanvas() {
-        const dpr = window.devicePixelRatio || 1;
-        this.width  = window.innerWidth;
-        this.height = window.innerHeight;
-        this.canvas.width  = this.width  * dpr;
-        this.canvas.height = this.height * dpr;
-        this.canvas.style.width  = this.width  + 'px';
-        this.canvas.style.height = this.height + 'px';
-        this.ctx.scale(dpr, dpr);
-        this.camera.horizonY = this.height * GAME_CONFIG.CAMERA.HORIZON_RATIO;
-        if (this.input) {
-            this.input.centerX = this.width  / 2;
-            this.input.centerY = this.height / 2;
-        }
-    }
 }
 
-// ── Module-level helpers ──────────────────────────────────────
+function _rand(min, max)    { return min + Math.random() * (max - min); }
+function _randInt(min, max) { return Math.floor(_rand(min, max + 1)); }
 
-function _rand(min, max)        { return min + Math.random() * (max - min); }
-function _randInt(min, max)     { return Math.floor(_rand(min, max + 1));   }
-
-// Boot
 window.addEventListener('DOMContentLoaded', () => { window.game = new Game(); });
