@@ -44,7 +44,7 @@ class Renderer {
         );
         // Eye height ~1.6m, looking straight down the range
         this.camera.position.set(0, 1.6, 0);
-        this.camera.lookAt(0, 1.4, -50);
+        this.camera.lookAt(0, 1.6, -100);
 
         this.scene = new THREE.Scene();
     }
@@ -65,7 +65,7 @@ class Renderer {
                 topColor:    { value: new THREE.Color(0x0d2b4e) },
                 midColor:    { value: new THREE.Color(0x1a6090) },
                 horizonColor:{ value: new THREE.Color(0x9dd4f0) },
-                sunDir:      { value: new THREE.Vector3(0.6, 0.35, -0.7).normalize() },
+                sunDir:      { value: new THREE.Vector3(-0.5, 0.6, -0.6).normalize() },
                 sunColor:    { value: new THREE.Color(1.0, 0.95, 0.7) },
                 sunSize:     { value: 0.9997 },
                 sunGlowSize: { value: 0.996 },
@@ -204,12 +204,12 @@ class Renderer {
             cx.fill();
         }
 
-        // Patchy grass
-        for (let i = 0; i < 400; i++) {
+        // Subtle patchy grass variation
+        for (let i = 0; i < 300; i++) {
             const x = Math.random() * texSize;
             const y = Math.random() * texSize;
-            const r = Math.random() * 18 + 4;
-            cx.fillStyle = `rgba(${50 + Math.random()*30},${80 + Math.random()*40},${20 + Math.random()*20},0.25)`;
+            const r = Math.random() * 8 + 2;
+            cx.fillStyle = `rgba(${40 + Math.random()*20},${65 + Math.random()*25},${15 + Math.random()*15},0.12)`;
             cx.beginPath();
             cx.ellipse(x, y, r, r * 0.6, Math.random() * Math.PI, 0, Math.PI * 2);
             cx.fill();
@@ -224,14 +224,6 @@ class Renderer {
         ground.rotation.x = -Math.PI / 2;
         ground.receiveShadow = true;
         this.scene.add(ground);
-
-        // Thin grass strip at the very edge of the range
-        const grassGeo  = new THREE.PlaneGeometry(2000, 2);
-        const grassMat  = new THREE.MeshLambertMaterial({ color: 0x4a7a28 });
-        const grassMesh = new THREE.Mesh(grassGeo, grassMat);
-        grassMesh.rotation.x = -Math.PI / 2;
-        grassMesh.position.set(0, 0.01, -6);
-        this.scene.add(grassMesh);
 
         // Range distance markers (poles at 10m, 25m, 50m, 100m)
         [10, 25, 50, 100].forEach(dist => {
@@ -273,7 +265,7 @@ class Renderer {
 
         // Sun directional light
         const sun = new THREE.DirectionalLight(0xfff4d0, 1.8);
-        sun.position.set(60, 80, -50);
+        sun.position.set(-50, 80, 60);
         sun.castShadow = true;
         sun.shadow.mapSize.width  = 2048;
         sun.shadow.mapSize.height = 2048;
@@ -321,73 +313,63 @@ class Renderer {
 
         // Update all target mesh positions/rotations
         game.targets.forEach(target => {
-            const mesh = this.targets3d.get(target);
-            if (!mesh) return;
+            const group = this.targets3d.get(target);
+            if (!group) return;
 
-            // World coords → Three.js coords
-            // worldX: -1..1 → ±10m wide
-            // distance: 0..1 → 8..60m deep  (was 5..100, too far)
+            const disc = group.children[0];
+
             const x =  target.worldX * 10;
             const z = -(8 + target.distance * 52);
             const y =  1.0 + target.worldY * 3;
 
+            group.position.set(x, y, z);
+
             if (target.isFalling) {
-                mesh.position.set(x, y, z);
-                mesh.rotation.x = target.fallAngle * Math.PI / 180;
+                group.rotation.x = target.fallAngle * Math.PI / 180;
+                group.rotation.z = 0;
             } else {
-                mesh.position.set(x, y, z);
-                mesh.rotation.x = 0;
-                mesh.rotation.z = target.swingAngle * Math.PI / 180;
+                group.rotation.x = 0;
+                group.rotation.z = target.swingAngle * Math.PI / 180;
             }
 
-            // Scale by distance (handled by perspective naturally in 3D,
-            // but baseSize difference for micro targets)
             const scale = target.baseSize / GAME_CONFIG.TARGET.BASE_SIZE;
-            mesh.scale.setScalar(scale);
-
-            // Fog/alpha for very distant targets
-            mesh.material.opacity = target.isFalling ? 0.7 : 1.0;
+            group.scale.setScalar(scale);
 
             // Impact flash
             if (target.impactFlash > 0) {
-                mesh.material.emissive.setRGB(
+                disc.material.emissive.setRGB(
                     target.impactFlash,
                     target.impactFlash * 0.8,
                     target.impactFlash * 0.4
                 );
             } else {
-                mesh.material.emissive.setRGB(0, 0, 0);
+                disc.material.emissive.setRGB(0, 0, 0);
             }
 
-            // Glow for peek targets
             if (target.reaction?.isGlowing) {
-                mesh.material.emissive.setRGB(0.4, 0.3, 0.0);
+                disc.material.emissive.setRGB(0.4, 0.3, 0.0);
             }
         });
     }
 
     _makeTargetMesh(target) {
-        // Flat disc (very thin cylinder) — no legs
-        const radius    = 0.8; // metres, scaled by target.baseSize ratio later
+        // Use a Group so we can bake the disc orientation separately
+        // from the game-driven fall/swing rotations
+        const group = new THREE.Group();
+
+        const radius    = 0.8;
         const thickness = 0.04;
         const geo = new THREE.CylinderGeometry(radius, radius, thickness, 64);
-
-        // Canvas texture: concentric rings bullseye
         const tex = this._makeTargetTexture(target.type === 'micro');
+        const mat = new THREE.MeshLambertMaterial({ map: tex, transparent: true });
 
-        const mat = new THREE.MeshLambertMaterial({
-            map:         tex,
-            transparent: true,
-        });
+        const disc = new THREE.Mesh(geo, mat);
+        // Bake: rotate disc so its face points toward +Z (camera direction)
+        disc.rotation.x = Math.PI / 2;
+        disc.castShadow = true;
 
-        const mesh = new THREE.Mesh(geo, mat);
-
-        // Disc faces forward (rotate so flat face points toward camera)
-        mesh.rotation.x = Math.PI / 2;
-        mesh.castShadow    = true;
-        mesh.receiveShadow = false;
-
-        return mesh;
+        group.add(disc);
+        return group;
     }
 
     _makeTargetTexture(isMicro) {
@@ -454,12 +436,15 @@ class Renderer {
         const raycaster = new THREE.Raycaster();
         raycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), this.camera);
 
-        // Collect all target meshes
-        const meshes = [];
-        this.targets3d.forEach((mesh, target) => {
+        // Collect disc meshes (inside groups) for valid targets
+        const meshes   = [];
+        const meshToTarget = new Map();
+        this.targets3d.forEach((group, target) => {
             if (!target.isFalling || target.fallAngle > -45) {
                 if (!target.peek?.active || target.isActive) {
-                    meshes.push(mesh);
+                    const disc = group.children[0];
+                    meshes.push(disc);
+                    meshToTarget.set(disc, target);
                 }
             }
         });
@@ -467,13 +452,8 @@ class Renderer {
         const hits = raycaster.intersectObjects(meshes, false);
         if (hits.length === 0) return { hit: false, target: null, isCenterHit: false };
 
-        // Find which game target the mesh belongs to
-        const hitMesh = hits[0].object;
-        let hitTarget = null;
-        this.targets3d.forEach((mesh, target) => {
-            if (mesh === hitMesh) hitTarget = target;
-        });
-
+        const hitMesh   = hits[0].object;
+        const hitTarget = meshToTarget.get(hitMesh);
         if (!hitTarget) return { hit: false, target: null, isCenterHit: false };
 
         // Centre hit = within inner 30% of radius
