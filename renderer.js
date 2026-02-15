@@ -54,6 +54,7 @@ class Renderer {
         this._buildGround();
         this._buildLighting();
         this._buildFog();
+        this._buildFoliage();
     }
 
     _buildSky() {
@@ -67,8 +68,8 @@ class Renderer {
                 horizonColor:{ value: new THREE.Color(0x9dd4f0) },
                 sunDir:      { value: new THREE.Vector3(-0.5, 0.6, -0.6).normalize() },
                 sunColor:    { value: new THREE.Color(1.0, 0.95, 0.7) },
-                sunSize:     { value: 0.9997 },
-                sunGlowSize: { value: 0.996 },
+                sunSize:     { value: 0.99985 },
+                sunGlowSize: { value: 0.9985 },
             },
             vertexShader: `
                 varying vec3 vWorldPos;
@@ -287,6 +288,83 @@ class Renderer {
         this.scene.fog = new THREE.FogExp2(0x9dd4f0, 0.008);
     }
 
+
+        // Reusable geometries
+        const trunkGeo  = new THREE.CylinderGeometry(0.12, 0.18, 1.8, 7);
+        const cone1Geo  = new THREE.ConeGeometry(1.4, 2.4, 7);
+        const cone2Geo  = new THREE.ConeGeometry(1.1, 2.0, 7);
+        const cone3Geo  = new THREE.ConeGeometry(0.8, 1.6, 7);
+        const bushGeo   = new THREE.SphereGeometry(1, 7, 5);
+
+        const trunkMat  = new THREE.MeshLambertMaterial({ color: 0x4a3020 });
+        const foliageMat= new THREE.MeshLambertMaterial({ color: 0x2d5a1b });
+        const foliageMat2=new THREE.MeshLambertMaterial({ color: 0x3a6e22 });
+        const bushMat   = new THREE.MeshLambertMaterial({ color: 0x3d6b1a });
+        const bushMat2  = new THREE.MeshLambertMaterial({ color: 0x4a7d28 });
+
+        const addTree = (x, z, scale = 1) => {
+            const g = new THREE.Group();
+
+            const trunk = new THREE.Mesh(trunkGeo, trunkMat);
+            trunk.position.y = 0.9 * scale;
+            g.add(trunk);
+
+            // Three layered cones for a pine tree look
+            const c1 = new THREE.Mesh(cone1Geo, foliageMat);
+            c1.position.y = 2.2 * scale;
+            g.add(c1);
+            const c2 = new THREE.Mesh(cone2Geo, foliageMat2);
+            c2.position.y = 3.2 * scale;
+            g.add(c2);
+            const c3 = new THREE.Mesh(cone3Geo, foliageMat);
+            c3.position.y = 4.0 * scale;
+            g.add(c3);
+
+            g.scale.setScalar(scale);
+            g.position.set(x, 0, z);
+            g.rotation.y = Math.random() * Math.PI * 2;
+            this.scene.add(g);
+        };
+
+        const addBush = (x, z, scale = 1) => {
+            const mat = Math.random() > 0.5 ? bushMat : bushMat2;
+            const bush = new THREE.Mesh(bushGeo, mat);
+            bush.scale.set(scale, scale * 0.7, scale);
+            bush.position.set(x, scale * 0.5, z);
+            this.scene.add(bush);
+        };
+
+        // Left side tree line
+        const leftX  = -16;
+        const rightX =  16;
+        const depths = [8, 14, 20, 28, 36, 44, 52, 62, 75, 90, 110, 130];
+
+        depths.forEach((d, i) => {
+            const jitter = (Math.random() - 0.5) * 4;
+            const scale  = 0.7 + Math.random() * 0.6;
+
+            // Trees on both sides
+            addTree(leftX  + jitter, -d, scale);
+            addTree(rightX - jitter, -d, scale);
+
+            // Extra trees clustered in groups
+            if (i % 3 === 0) {
+                addTree(leftX  + jitter - 3, -d - 2, scale * 0.8);
+                addTree(rightX - jitter + 3, -d - 2, scale * 0.8);
+            }
+        });
+
+        // Bushes scattered near treeline and between trees
+        for (let z = -5; z > -140; z -= 6) {
+            const s = 0.4 + Math.random() * 0.5;
+            if (Math.random() > 0.4) addBush(leftX  + (Math.random() - 0.5) * 6, z, s);
+            if (Math.random() > 0.4) addBush(rightX + (Math.random() - 0.5) * 6, z, s);
+            // Occasional bush cluster inside the range edges
+            if (Math.random() > 0.7) addBush(leftX  + 4 + Math.random() * 2, z + Math.random() * 3, s * 0.7);
+            if (Math.random() > 0.7) addBush(rightX - 4 - Math.random() * 2, z + Math.random() * 3, s * 0.7);
+        }
+    }
+
     // ── Target management ─────────────────────────────────────
 
     /** Call every frame — syncs 3D meshes with game target list */
@@ -320,7 +398,7 @@ class Renderer {
 
             const x =  target.worldX * 10;
             const z = -(8 + target.distance * 52);
-            const y =  1.0 + target.worldY * 3;
+            const y =  0.8 + target.worldY * 3; // 0.8m = target centre above ground
 
             group.position.set(x, y, z);
 
