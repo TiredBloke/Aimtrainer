@@ -68,8 +68,8 @@ class Renderer {
                 horizonColor:{ value: new THREE.Color(0x9dd4f0) },
                 sunDir:      { value: new THREE.Vector3(-0.5, 0.6, -0.6).normalize() },
                 sunColor:    { value: new THREE.Color(1.0, 0.95, 0.7) },
-                sunSize:     { value: 0.99985 },
-                sunGlowSize: { value: 0.9985 },
+                sunSize:     { value: 0.99992 },
+                sunGlowSize: { value: 0.9992 },
             },
             vertexShader: `
                 varying vec3 vWorldPos;
@@ -103,8 +103,8 @@ class Renderer {
 
                     // Sun disc + glow
                     float cosAngle = dot(dir, normalize(sunDir));
-                    float sun  = smoothstep(sunSize,      sunSize + 0.001, cosAngle);
-                    float glow = smoothstep(sunGlowSize - 0.04, sunGlowSize, cosAngle) * 0.5;
+                    float sun  = smoothstep(sunSize,      sunSize + 0.0001, cosAngle);
+                    float glow = smoothstep(sunGlowSize - 0.001, sunGlowSize, cosAngle) * 0.25;
                     vec3 col = sky + sunColor * (sun + glow);
 
                     // Horizon haze
@@ -237,7 +237,7 @@ class Renderer {
         const postGeo = new THREE.CylinderGeometry(0.04, 0.04, 1.2, 6);
         const postMat = new THREE.MeshLambertMaterial({ color: 0xddcc88 });
         const post    = new THREE.Mesh(postGeo, postMat);
-        post.position.set(-12, 0.6, -dist);
+        post.position.set(-14, 0.6, -dist);
         post.castShadow = true;
         this.scene.add(post);
 
@@ -256,7 +256,7 @@ class Renderer {
             new THREE.PlaneGeometry(0.6, 0.3),
             new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide })
         );
-        sign.position.set(-12, 1.35, -dist);
+        sign.position.set(-14, 1.35, -dist);
         this.scene.add(sign);
     }
 
@@ -334,9 +334,9 @@ class Renderer {
             this.scene.add(bush);
         };
 
-        // Left side tree line
-        const leftX  = -16;
-        const rightX =  16;
+        // Trees well outside the shooting lane (targets span ±10m, trees start at ±18m)
+        const leftX  = -20;
+        const rightX =  20;
         const depths = [8, 14, 20, 28, 36, 44, 52, 62, 75, 90, 110, 130];
 
         depths.forEach((d, i) => {
@@ -397,8 +397,8 @@ class Renderer {
             const disc = group.children[0];
 
             const x =  target.worldX * 10;
-            const z = -(8 + target.distance * 52);
-            const y =  0.8 + target.worldY * 3; // 0.8m = target centre above ground
+            const z = -(5 + target.distance * 45);
+            const y =  0.8 + target.worldY * 3;
 
             group.position.set(x, y, z);
 
