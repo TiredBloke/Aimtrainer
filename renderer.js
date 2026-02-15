@@ -288,7 +288,7 @@ class Renderer {
         this.scene.fog = new THREE.FogExp2(0x9dd4f0, 0.008);
     }
 
-
+    _buildFoliage() {
         // Reusable geometries
         const trunkGeo  = new THREE.CylinderGeometry(0.12, 0.18, 1.8, 7);
         const cone1Geo  = new THREE.ConeGeometry(1.4, 2.4, 7);
