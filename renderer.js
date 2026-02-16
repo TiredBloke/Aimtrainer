@@ -28,12 +28,18 @@ class Renderer {
             antialias: true,
             alpha: false
         });
-        this.renderer.setPixelRatio(window.devicePixelRatio);
+        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
         this.renderer.setSize(window.innerWidth, window.innerHeight);
-        this.renderer.shadowMap.enabled = true;
-        this.renderer.shadowMap.type    = THREE.PCFSoftShadowMap;
-        this.renderer.toneMapping       = THREE.ACESFilmicToneMapping;
-        this.renderer.toneMappingExposure = 0.8;
+        this.renderer.shadowMap.enabled  = true;
+        this.renderer.shadowMap.type     = THREE.PCFSoftShadowMap;
+        // PBR rendering setup
+        this.renderer.physicallyCorrectLights  = true;
+        this.renderer.outputColorSpace         = THREE.SRGBColorSpace;
+        this.renderer.toneMapping              = THREE.ACESFilmicToneMapping;
+        this.renderer.toneMappingExposure      = 1.0;
+        // Clock for wind animation
+        this.clock = new THREE.Clock();
+        this.windUniforms = [];   // collect all wind uniforms for update in render()
 
         // Perspective camera — FOV 75, matches a typical FPS feel
         this.camera = new THREE.PerspectiveCamera(
@@ -53,6 +59,7 @@ class Renderer {
         this._buildSky();
         this._buildGround();
         this._buildLighting();
+        this._buildEnvMap();
         this._buildFog();
         this._buildFoliage();
     }
@@ -214,7 +221,7 @@ class Renderer {
         tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
         tex.repeat.set(40, 40);
 
-        const mat = new THREE.MeshLambertMaterial({ map: tex });
+        const mat = new THREE.MeshStandardMaterial({ map: tex, roughness: 1.0, metalness: 0.0 });
         const ground = new THREE.Mesh(geo, mat);
         ground.rotation.x = -Math.PI / 2;
         ground.receiveShadow = true;
@@ -229,7 +236,7 @@ class Renderer {
     _addDistanceMarker(dist) {
         // Small post with distance label texture
         const postGeo = new THREE.CylinderGeometry(0.04, 0.04, 1.2, 6);
-        const postMat = new THREE.MeshLambertMaterial({ color: 0xddcc88 });
+        const postMat = new THREE.MeshStandardMaterial({ color: 0xddcc88, roughness: 0.9, metalness: 0.0 });
         const post    = new THREE.Mesh(postGeo, postMat);
         post.position.set(-14, 0.6, -dist);
         post.castShadow = true;
@@ -255,12 +262,9 @@ class Renderer {
     }
 
     _buildLighting() {
-        // Ambient
-        this.scene.add(new THREE.AmbientLight(0x8ab4d4, 0.6));
-
-        // Sun directional light
-        const sun = new THREE.DirectionalLight(0xfff4d0, 1.8);
-        sun.position.set(-50, 80, 60);
+        // PBR directional sun — position matches sky shader sun direction
+        const sun = new THREE.DirectionalLight(0xfff4d0, 1.2);
+        sun.position.set(10, 20, 10);
         sun.castShadow = true;
         sun.shadow.mapSize.width  = 2048;
         sun.shadow.mapSize.height = 2048;
@@ -273,9 +277,28 @@ class Renderer {
         sun.shadow.bias = -0.001;
         this.scene.add(sun);
 
-        // Soft fill from sky
-        const fill = new THREE.HemisphereLight(0x8ab4d4, 0x7a6040, 0.5);
-        this.scene.add(fill);
+        // Hemisphere — sky/ground bounce, physically motivated
+        const hemi = new THREE.HemisphereLight(0xbfdfff, 0x8b7355, 0.6);
+        this.scene.add(hemi);
+    }
+
+    _buildEnvMap() {
+        // Generate a minimal PMREM environment from the sky/ground colours.
+        // Works in Three.js r128 — no RoomEnvironment needed.
+        // Gives MeshStandardMaterial objects subtle sky-tinted reflections.
+        const pmrem    = new THREE.PMREMGenerator(this.renderer);
+        pmrem.compileEquirectangularShader();
+
+        // Build a tiny scene: sky hemisphere above, warm ground below
+        const envScene = new THREE.Scene();
+        envScene.background = new THREE.Color(0x9dd4f0);  // horizon sky
+
+        // Sky dome light baked into the env
+        envScene.add(new THREE.HemisphereLight(0xbfdfff, 0x8b7355, 1.0));
+
+        const envTex = pmrem.fromScene(envScene).texture;
+        this.scene.environment = envTex;
+        pmrem.dispose();
     }
 
     _buildFog() {
@@ -288,13 +311,28 @@ class Renderer {
         // ── Vertex-gradient shader for foliage cones ──────────
         // Interpolates base→tip colour using the cone's local Y height.
         // Zero extra polygons, no textures — pure GLSL.
+        // Wind uniform shared across all foliage — updated each frame in render()
+        const windUniform = { value: 0.0 };
+        this.windUniforms.push(windUniform);
+
         const foliageVert = `
+            uniform float uTime;
+            uniform float uTreePhase;  // per-tree random phase offset so trees don't sync
+            uniform float coneHeight;
             varying float vHeight;
             varying vec3  vNormal;
             void main() {
                 vHeight = position.y;
                 vNormal = normalMatrix * normal;
-                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+
+                // Wind sway: sine wave on X, scaled by normalised height
+                // so the tip moves most and the base is anchored
+                float normH   = clamp((position.y + coneHeight * 0.5) / coneHeight, 0.0, 1.0);
+                float sway    = sin(uTime * 1.5 + uTreePhase) * 0.022 * normH * normH;
+                vec3  pos     = position;
+                pos.x        += sway;
+
+                gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
             }
         `;
         const foliageFrag = `
@@ -375,6 +413,7 @@ class Renderer {
 
         const addTree = (x, z, hScale = 1, wScale = 1) => {
             const g = new THREE.Group();
+            const treePhase = Math.random() * Math.PI * 2;   // unique wind phase per tree
 
             const trunkH    = (1.9 + Math.random() * 1.1) * hScale;
             const trunkBotR = 0.23 * wScale;
@@ -416,9 +455,11 @@ class Renderer {
 
                 const mat = new THREE.ShaderMaterial({
                     uniforms: {
-                        baseColor:  { value: tierPalette[i].base.clone() },
-                        tipColor:   { value: tierPalette[i].tip.clone()  },
-                        coneHeight: { value: coneH },
+                        baseColor:   { value: tierPalette[i].base.clone() },
+                        tipColor:    { value: tierPalette[i].tip.clone()  },
+                        coneHeight:  { value: coneH },
+                        uTime:       windUniform,                  // shared ref — updated once per frame
+                        uTreePhase:  { value: treePhase },         // unique per tree
                     },
                     vertexShader:   foliageVert,
                     fragmentShader: foliageFrag,
@@ -451,7 +492,7 @@ class Renderer {
             [0, 1].forEach(() => {
                 const mesh = new THREE.Mesh(
                     new THREE.SphereGeometry(scale * (0.28 + Math.random() * 0.18), 6, 4),
-                    new THREE.MeshLambertMaterial({ color: col })
+                    new THREE.MeshStandardMaterial({ color: col, roughness: 0.85, metalness: 0.0 })
                 );
                 mesh.scale.y = 0.60;
                 mesh.position.set(
@@ -569,7 +610,7 @@ class Renderer {
         const thickness = 0.04;
         const geo = new THREE.CylinderGeometry(radius, radius, thickness, 64);
         const tex = this._makeTargetTexture(target.type === 'micro');
-        const mat = new THREE.MeshLambertMaterial({ map: tex, transparent: true });
+        const mat = new THREE.MeshStandardMaterial({ map: tex, transparent: true, roughness: 0.6, metalness: 0.0 });
 
         const disc = new THREE.Mesh(geo, mat);
         // Bake: rotate disc so its face points toward +Z (camera direction)
@@ -676,6 +717,10 @@ class Renderer {
     // ── Main render ───────────────────────────────────────────
 
     render() {
+        // Update wind time uniform — single write, all foliage shares the ref
+        const t = this.clock.getElapsedTime();
+        this.windUniforms.forEach(u => { u.value = t; });
+
         this.syncTargets();
         this.renderer.render(this.scene, this.camera);
         this._renderHUD();
