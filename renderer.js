@@ -313,14 +313,56 @@ class Renderer {
             }
         `;
 
-        // Shared trunk — darker than foliage for contrast
-        const trunkMat = new THREE.MeshLambertMaterial({ color: 0x2a1606 });
+        // Shared trunk — uses a shader to darken the lower 15% near ground
+        // simulating occluded ambient light at the base
+        const trunkVert = `
+            varying float vY;
+            varying float vTrunkH;
+            uniform float trunkHeight;
+            void main() {
+                vY      = position.y + trunkHeight * 0.5; // 0 at base, trunkH at top
+                vTrunkH = trunkHeight;
+                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+            }
+        `;
+        const trunkFrag = `
+            uniform float trunkHeight;
+            varying float vY;
+            void main() {
+                // Normalised height 0 (base) → 1 (top)
+                float h      = clamp(vY / trunkHeight, 0.0, 1.0);
+                // Darken bottom 15% — smooth step so it's a gradual fade, not a band
+                float dark   = 1.0 - smoothstep(0.0, 0.15, h) * 0.38;
+                vec3  bark   = vec3(0.165, 0.086, 0.024);   // #2a1606
+                gl_FragColor = vec4(bark * dark, 1.0);
+            }
+        `;
 
-        // Shared ground shadow decal geometry/material (instanced per tree)
-        const shadowGeo = new THREE.CircleGeometry(1.0, 10);
+        // Soft contact shadow — radial gradient canvas texture, not a solid disc
+        // Gradient: opaque dark centre → fully transparent edge
+        const shadowTex = (() => {
+            const size = 128;
+            const cv   = document.createElement('canvas');
+            cv.width   = size; cv.height = size;
+            const cx   = cv.getContext('2d');
+            const mid  = size / 2;
+            const grad = cx.createRadialGradient(mid, mid, 0, mid, mid, mid);
+            grad.addColorStop(0.00, 'rgba(0,0,0,0.55)');   // dark centre
+            grad.addColorStop(0.35, 'rgba(0,0,0,0.28)');   // mid falloff
+            grad.addColorStop(0.70, 'rgba(0,0,0,0.08)');   // fading edge
+            grad.addColorStop(1.00, 'rgba(0,0,0,0.00)');   // transparent rim
+            cx.fillStyle = grad;
+            cx.fillRect(0, 0, size, size);
+            return new THREE.CanvasTexture(cv);
+        })();
+
+        const shadowGeo = new THREE.PlaneGeometry(1, 1);
         const shadowMat = new THREE.MeshBasicMaterial({
-            color: 0x000000, transparent: true,
-            opacity: 0.20, depthWrite: false,
+            map:         shadowTex,
+            transparent: true,
+            opacity:     1.0,        // opacity encoded in the texture gradient itself
+            depthWrite:  false,
+            blending:    THREE.MultiplyBlending,
         });
 
         // Tier colour pairs — each tier lightens toward the top
@@ -334,18 +376,26 @@ class Renderer {
         const addTree = (x, z, hScale = 1, wScale = 1) => {
             const g = new THREE.Group();
 
-            // Ground shadow — scales with trunk width
+            const trunkH    = (1.9 + Math.random() * 1.1) * hScale;
+            const trunkBotR = 0.23 * wScale;
+
+            // Soft contact shadow — radius slightly larger than trunk base,
+            // sits just above ground to avoid z-fighting
             const sh = new THREE.Mesh(shadowGeo, shadowMat);
             sh.rotation.x = -Math.PI / 2;
-            sh.position.y = 0.015;
-            sh.scale.set(wScale * 1.5, wScale * 1.5, 1);
+            sh.position.y = 0.018;
+            const shR = trunkBotR * 5.5;   // soft spread ~5× trunk base radius
+            sh.scale.set(shR, shR, 1);
             g.add(sh);
 
-            // Trunk
-            const trunkH = (1.9 + Math.random() * 1.1) * hScale;
-            const trunk  = new THREE.Mesh(
-                new THREE.CylinderGeometry(0.08 * wScale, 0.23 * wScale, trunkH, 8),
-                trunkMat
+            // Trunk with base-darkening shader
+            const trunk = new THREE.Mesh(
+                new THREE.CylinderGeometry(0.08 * wScale, trunkBotR, trunkH, 8),
+                new THREE.ShaderMaterial({
+                    uniforms:       { trunkHeight: { value: trunkH } },
+                    vertexShader:   trunkVert,
+                    fragmentShader: trunkFrag,
+                })
             );
             trunk.position.y = trunkH * 0.5;
             trunk.castShadow = true;

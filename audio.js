@@ -33,22 +33,14 @@ class AudioManager {
         this._bassPunch(now);
     }
 
+    /**
+     * Steel plate hit — procedural metal impact.
+     * @param {number} distance  0 (close) → 1 (far)
+     * @param {boolean} isCenterHit
+     */
     playMetalPing(distance, isCenterHit) {
         if (!this.ready) return;
-        const now      = this.ctx.currentTime;
-        const nearness = 1 - distance;
-        const volume   = 0.35 + nearness * 0.5;
-
-        // Main impact — heavy steel clang
-        this._steelImpact(now, isCenterHit, volume, nearness);
-
-        // Reverb tail — distant metallic sustain, like a mass impact
-        this._impactTail(now, isCenterHit, volume, distance);
-
-        // Distant echo for far targets
-        if (distance > GAME_CONFIG.AUDIO.ECHO_THRESHOLD) {
-            this._roomEcho(now + distance * 0.12, volume * 0.3, nearness);
-        }
+        this._steelPlateHit(this.ctx.currentTime, distance, isCenterHit);
     }
 
     setVolume(v) {
@@ -61,7 +53,8 @@ class AudioManager {
         const size   = this.ctx.sampleRate * 0.12;
         const buffer = this.ctx.createBuffer(1, size, this.ctx.sampleRate);
         const data   = buffer.getChannelData(0);
-        for (let i = 0; i < size; i++) data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / size, 0.3);
+        for (let i = 0; i < size; i++)
+            data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / size, 0.3);
 
         const src  = this.ctx.createBufferSource();
         const hpf  = this.ctx.createBiquadFilter();
@@ -70,7 +63,6 @@ class AudioManager {
         src.buffer          = buffer;
         hpf.type            = 'highpass';
         hpf.frequency.value = 600;
-
         gain.gain.setValueAtTime(0.45, t);
         gain.gain.exponentialRampToValueAtTime(0.01, t + 0.09);
 
@@ -81,119 +73,130 @@ class AudioManager {
     _bassPunch(t) {
         const osc  = this.ctx.createOscillator();
         const gain = this.ctx.createGain();
-
         osc.type = 'sine';
         osc.frequency.setValueAtTime(80, t);
         osc.frequency.exponentialRampToValueAtTime(35, t + 0.1);
-
         gain.gain.setValueAtTime(0.7, t);
         gain.gain.exponentialRampToValueAtTime(0.01, t + 0.1);
-
         osc.connect(gain); gain.connect(this.master);
         osc.start(t); osc.stop(t + 0.1);
     }
 
-    // ── Hit sounds ────────────────────────────────────────────
+    // ── Steel plate hit ───────────────────────────────────────
 
-    _steelImpact(t, isCenterHit, volume, nearness) {
-        // Sharp transient click + high metallic ping
-        const baseFreq  = isCenterHit ? 3200 : 2400;
-        const harmonics = [1.0, 1.47, 2.08, 2.77, 3.58];
-        const hGains    = [1.0, 0.55, 0.35, 0.20, 0.10];
+    _steelPlateHit(t, distance, isCenterHit) {
+        const ctx      = this.ctx;
+        const nearness = 1.0 - distance;
+        const vol      = (0.30 + nearness * 0.45) * GAME_CONFIG.AUDIO.METAL_HIT_VOLUME;
 
-        const mainGain = this.ctx.createGain();
-        mainGain.gain.setValueAtTime(0, t);
-        mainGain.gain.linearRampToValueAtTime(volume * GAME_CONFIG.AUDIO.METAL_HIT_VOLUME, t + 0.001);
-        mainGain.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
-        mainGain.connect(this.master);
+        // Per-hit pitch randomisation ±5%
+        const pitchVar = 0.95 + Math.random() * 0.10;
 
-        harmonics.forEach((ratio, i) => {
-            const osc  = this.ctx.createOscillator();
-            const gain = this.ctx.createGain();
-            osc.type = 'sine';
-            osc.frequency.setValueAtTime(baseFreq * ratio, t);
-            osc.frequency.linearRampToValueAtTime(baseFreq * ratio * 0.97, t + 0.12);
-            gain.gain.value = hGains[i];
-            osc.connect(gain); gain.connect(mainGain);
-            osc.start(t); osc.stop(t + 0.18);
-        });
-    }
+        // Per-hit decay randomisation ±10%
+        const decayVar = 0.90 + Math.random() * 0.20;
 
-    _impactTail(t, isCenterHit, volume, distance) {
-        // The "mass impact" tail — low resonant sustain that fades slowly
-        // like a heavy steel plate still vibrating after the hit
-        const tailDur  = 0.8 + (1 - distance) * 0.6; // closer = longer ring
-        const tailFreq = isCenterHit ? 420 : 310;
-        const tailVol  = volume * 0.25;
+        // Stereo panner — small random spread so repeated hits feel distinct
+        const panner = ctx.createStereoPanner();
+        panner.pan.value = (Math.random() - 0.5) * 0.35;
+        panner.connect(this.master);
 
-        // Low resonant body
-        const bodyGain = this.ctx.createGain();
-        bodyGain.gain.setValueAtTime(0, t + 0.005);
-        bodyGain.gain.linearRampToValueAtTime(tailVol, t + 0.015);
-        bodyGain.gain.setValueAtTime(tailVol, t + 0.04);
-        bodyGain.gain.exponentialRampToValueAtTime(0.001, t + tailDur);
+        // High-pass filter on the whole hit chain — removes low rumble
+        const hpf = ctx.createBiquadFilter();
+        hpf.type            = 'highpass';
+        hpf.frequency.value = 280;
+        hpf.Q.value         = 0.7;
+        hpf.connect(panner);
 
-        const lpf = this.ctx.createBiquadFilter();
-        lpf.type  = 'lowpass';
-        lpf.frequency.value = 900;
-        lpf.Q.value         = 2.5;
-        lpf.connect(bodyGain); bodyGain.connect(this.master);
+        // ── 1. Impact transient — very short noise burst ──────
+        // Gives the "mass" — the physical collision before the ring
+        {
+            const burstLen = Math.floor(ctx.sampleRate * 0.018);
+            const buf      = ctx.createBuffer(1, burstLen, ctx.sampleRate);
+            const data     = buf.getChannelData(0);
+            for (let i = 0; i < burstLen; i++) {
+                // Short sharp click shape: instant attack, very fast decay
+                const env  = Math.pow(1.0 - i / burstLen, 3.5);
+                data[i]    = (Math.random() * 2 - 1) * env;
+            }
+            const src  = ctx.createBufferSource();
+            const gain = ctx.createGain();
+            src.buffer        = buf;
+            gain.gain.value   = vol * 1.4;
+            src.connect(gain); gain.connect(hpf);
+            src.start(t); src.stop(t + 0.020);
+        }
 
-        // Two detuned oscillators for a beating, ringing plate sound
-        [tailFreq, tailFreq * 1.012].forEach(freq => {
-            const osc  = this.ctx.createOscillator();
-            const gain = this.ctx.createGain();
-            osc.type = 'sine';
+        // ── 2. Inharmonic metallic partials ──────────────────
+        // Real steel plate resonances are NOT harmonic.
+        // These ratios come from measured thin-plate vibration modes.
+        // Base frequency shifts with distance and center/edge hit.
+        const baseHz = (isCenterHit ? 1340 : 980) * pitchVar;
+
+        // [frequency ratio, relative gain, decay multiplier]
+        // Ratios are inharmonic (not integer multiples) — that's what makes
+        // it sound like metal rather than a musical instrument.
+        const partials = [
+            [ 1.000, 1.00, 1.00 ],   // fundamental mode
+            [ 1.493, 0.72, 0.82 ],   // 2nd plate mode
+            [ 2.121, 0.50, 0.65 ],   // 3rd mode
+            [ 2.917, 0.33, 0.52 ],   // 4th mode
+            [ 3.841, 0.20, 0.40 ],   // 5th mode — fades fast
+            [ 5.278, 0.10, 0.28 ],   // high shimmer
+            [ 7.143, 0.05, 0.18 ],   // upper partial — brief brightness
+        ];
+
+        partials.forEach(([ratio, relGain, decayMult]) => {
+            const freq    = baseHz * ratio;
+            // Slight per-partial pitch drift — metal rings, then settles
+            const freqEnd = freq * (0.991 + Math.random() * 0.006);
+
+            // Decay time: closer targets ring longer; center hits ring longer
+            const baseDur   = (isCenterHit ? 0.75 : 0.45) * decayMult * decayVar;
+            const dur       = baseDur * (0.6 + nearness * 0.8);
+
+            const osc  = ctx.createOscillator();
+            const gain = ctx.createGain();
+
+            // Sine for lower partials (rounder), triangle for upper (more bite)
+            osc.type = freq < 3000 ? 'sine' : 'triangle';
             osc.frequency.setValueAtTime(freq, t);
-            osc.frequency.linearRampToValueAtTime(freq * 0.985, t + tailDur);
-            gain.gain.value = 0.5;
-            osc.connect(gain); gain.connect(lpf);
-            osc.start(t + 0.005); osc.stop(t + tailDur);
+            osc.frequency.exponentialRampToValueAtTime(freqEnd, t + dur);
+
+            // Attack: near-instant (0.5ms) then exponential decay
+            gain.gain.setValueAtTime(0.0001, t);
+            gain.gain.linearRampToValueAtTime(vol * relGain, t + 0.0005);
+            gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+
+            osc.connect(gain); gain.connect(hpf);
+            osc.start(t); osc.stop(t + dur + 0.01);
         });
 
-        // Subtle noise shimmer — the plate surface hiss
-        const noiseSize = Math.floor(this.ctx.sampleRate * tailDur * 0.5);
-        const nBuf  = this.ctx.createBuffer(1, noiseSize, this.ctx.sampleRate);
-        const nData = nBuf.getChannelData(0);
-        for (let i = 0; i < noiseSize; i++) nData[i] = (Math.random() * 2 - 1) * 0.3;
+        // ── 3. Body resonance — low sustain thud ─────────────
+        // The plate has mass — a short low-mid boom under the ring.
+        // This is what makes it feel physical rather than tinny.
+        {
+            const bodyFreq = (isCenterHit ? 220 : 165) * pitchVar;
+            const bodyDur  = 0.12 * decayVar;
 
-        const nSrc   = this.ctx.createBufferSource();
-        const nBpf   = this.ctx.createBiquadFilter();
-        const nGain  = this.ctx.createGain();
+            const osc  = ctx.createOscillator();
+            const gain = ctx.createGain();
 
-        nSrc.buffer         = nBuf;
-        nBpf.type           = 'bandpass';
-        nBpf.frequency.value = 2200;
-        nBpf.Q.value         = 1.5;
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(bodyFreq, t);
+            osc.frequency.exponentialRampToValueAtTime(bodyFreq * 0.88, t + bodyDur);
 
-        nGain.gain.setValueAtTime(0, t + 0.01);
-        nGain.gain.linearRampToValueAtTime(tailVol * 0.15, t + 0.04);
-        nGain.gain.exponentialRampToValueAtTime(0.001, t + tailDur * 0.6);
+            gain.gain.setValueAtTime(0.0001, t);
+            gain.gain.linearRampToValueAtTime(vol * 0.55, t + 0.001);
+            gain.gain.exponentialRampToValueAtTime(0.0001, t + bodyDur);
 
-        nSrc.connect(nBpf); nBpf.connect(nGain); nGain.connect(this.master);
-        nSrc.start(t + 0.01); nSrc.stop(t + tailDur * 0.6);
-    }
+            // Low-pass so it doesn't muddy the ring
+            const lpf = ctx.createBiquadFilter();
+            lpf.type            = 'lowpass';
+            lpf.frequency.value = 600;
+            lpf.Q.value         = 1.2;
 
-    _roomEcho(t, volume, nearness) {
-        // Distant room reflection
-        const freq = 800 - nearness * 200;
-        const dur  = 0.35;
-
-        const gain = this.ctx.createGain();
-        gain.gain.setValueAtTime(0, t);
-        gain.gain.linearRampToValueAtTime(volume, t + 0.008);
-        gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
-
-        const lpf = this.ctx.createBiquadFilter();
-        lpf.type  = 'lowpass';
-        lpf.frequency.value = 1000;
-        lpf.connect(gain); gain.connect(this.master);
-
-        const osc = this.ctx.createOscillator();
-        osc.type  = 'sine';
-        osc.frequency.setValueAtTime(freq, t);
-        osc.frequency.exponentialRampToValueAtTime(freq * 0.93, t + dur);
-        osc.connect(lpf);
-        osc.start(t); osc.stop(t + dur);
+            osc.connect(gain); gain.connect(lpf); lpf.connect(hpf);
+            osc.start(t); osc.stop(t + bodyDur + 0.01);
+        }
     }
 }
