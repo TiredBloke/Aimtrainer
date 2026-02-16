@@ -279,72 +279,114 @@ class Renderer {
     }
 
     _buildFog() {
-        this.scene.fog = new THREE.FogExp2(0x9dd4f0, 0.008);
+        // Match horizon colour exactly so distant trees fade into sky naturally
+        this.scene.fog = new THREE.FogExp2(0x9dd4f0, 0.010);
     }
 
     _buildFoliage() {
-        // Bark texture
-        const barkTex = (() => {
-            const cv = document.createElement('canvas');
-            cv.width = 64; cv.height = 256;
-            const cx = cv.getContext('2d');
-            cx.fillStyle = '#2e1a0a';
-            cx.fillRect(0, 0, 64, 256);
-            for (let i = 0; i < 60; i++) {
-                const v = Math.floor(Math.random() * 25);
-                cx.fillStyle = `rgba(${15+v},${10+v},${4+v},0.55)`;
-                cx.fillRect(Math.random() * 64, Math.random() * 256, Math.random() * 2.5 + 0.5, Math.random() * 120 + 30);
-            }
-            const t = new THREE.CanvasTexture(cv);
-            t.wrapS = t.wrapT = THREE.RepeatWrapping;
-            return t;
-        })();
 
-        const addTree = (x, z, scale = 1) => {
+        // ── Vertex-gradient shader for foliage cones ──────────
+        // Interpolates base→tip colour using the cone's local Y height.
+        // Zero extra polygons, no textures — pure GLSL.
+        const foliageVert = `
+            varying float vHeight;
+            varying vec3  vNormal;
+            void main() {
+                vHeight = position.y;
+                vNormal = normalMatrix * normal;
+                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+            }
+        `;
+        const foliageFrag = `
+            uniform vec3  baseColor;
+            uniform vec3  tipColor;
+            uniform float coneHeight;
+            varying float vHeight;
+            varying vec3  vNormal;
+            void main() {
+                float t   = clamp((vHeight + coneHeight * 0.5) / coneHeight, 0.0, 1.0);
+                vec3  col = mix(baseColor, tipColor, t * t);
+                vec3  lightDir = normalize(vec3(0.4, 1.0, 0.3));
+                float diff     = max(dot(normalize(vNormal), lightDir), 0.0);
+                col *= 0.60 + diff * 0.58;
+                gl_FragColor = vec4(col, 1.0);
+            }
+        `;
+
+        // Shared trunk — darker than foliage for contrast
+        const trunkMat = new THREE.MeshLambertMaterial({ color: 0x2a1606 });
+
+        // Shared ground shadow decal geometry/material (instanced per tree)
+        const shadowGeo = new THREE.CircleGeometry(1.0, 10);
+        const shadowMat = new THREE.MeshBasicMaterial({
+            color: 0x000000, transparent: true,
+            opacity: 0.20, depthWrite: false,
+        });
+
+        // Tier colour pairs — each tier lightens toward the top
+        const tierPalette = [
+            { base: new THREE.Color(0x0c2804), tip: new THREE.Color(0x1a4c0e) },
+            { base: new THREE.Color(0x113208), tip: new THREE.Color(0x245a14) },
+            { base: new THREE.Color(0x174010), tip: new THREE.Color(0x2e6e1c) },
+            { base: new THREE.Color(0x1c500e), tip: new THREE.Color(0x3a8424) },
+        ];
+
+        const addTree = (x, z, hScale = 1, wScale = 1) => {
             const g = new THREE.Group();
 
-            // Trunk — solid warm brown, no texture (lambert handles shading fine)
-            const trunkH = (2.2 + Math.random() * 1.4) * scale;
+            // Ground shadow — scales with trunk width
+            const sh = new THREE.Mesh(shadowGeo, shadowMat);
+            sh.rotation.x = -Math.PI / 2;
+            sh.position.y = 0.015;
+            sh.scale.set(wScale * 1.5, wScale * 1.5, 1);
+            g.add(sh);
+
+            // Trunk
+            const trunkH = (1.9 + Math.random() * 1.1) * hScale;
             const trunk  = new THREE.Mesh(
-                new THREE.CylinderGeometry(0.09 * scale, 0.26 * scale, trunkH, 12),
-                new THREE.MeshLambertMaterial({ color: 0x4a2e0e })
+                new THREE.CylinderGeometry(0.08 * wScale, 0.23 * wScale, trunkH, 8),
+                trunkMat
             );
             trunk.position.y = trunkH * 0.5;
             trunk.castShadow = true;
             g.add(trunk);
 
-            // 4 overlapping cones — taller overall, dark at base to light at top
-            const totalH = (5.0 + Math.random() * 3.5) * scale;
-            const baseW  = (1.6 + Math.random() * 0.8) * scale;
+            // 4 overlapping foliage cones with gradient
+            const totalH = (5.5 + Math.random() * 3.0) * hScale;
+            const baseW  = (1.5 + Math.random() * 0.6) * wScale;
             const tiers  = 4;
 
-            // Colour ramp: very dark base → mid → light bright top
-            const tierColors = [
-                new THREE.Color(0x143a08),  // very dark green base
-                new THREE.Color(0x1e5410),  // dark green
-                new THREE.Color(0x2d6e1a),  // mid green
-                new THREE.Color(0x3d8a24),  // bright light green tip
-            ];
-
             for (let i = 0; i < tiers; i++) {
-                const t     = i / (tiers - 1);
-                const coneR = baseW * (0.92 - t * 0.52);
-                const coneH = totalH * (0.52 + t * 0.12);
-                const coneY = trunkH * 0.5 + t * totalH * 0.70;
-                const ox    = (Math.random() - 0.5) * 0.10 * scale;
-                const oz    = (Math.random() - 0.5) * 0.10 * scale;
+                const t      = i / (tiers - 1);
+                const coneR  = baseW * (0.90 - t * 0.50);
+                const coneH  = totalH * (0.54 + t * 0.10);
+                const coneY  = trunkH * 0.42 + t * totalH * 0.68;
+                const ox     = (Math.random() - 0.5) * 0.08 * wScale;
+                const oz     = (Math.random() - 0.5) * 0.08 * wScale;
+
+                const mat = new THREE.ShaderMaterial({
+                    uniforms: {
+                        baseColor:  { value: tierPalette[i].base.clone() },
+                        tipColor:   { value: tierPalette[i].tip.clone()  },
+                        coneHeight: { value: coneH },
+                    },
+                    vertexShader:   foliageVert,
+                    fragmentShader: foliageFrag,
+                });
 
                 const cone = new THREE.Mesh(
-                    new THREE.ConeGeometry(coneR, coneH, 16),  // 16 segments — smooth
-                    new THREE.MeshLambertMaterial({ color: tierColors[i] })
+                    new THREE.ConeGeometry(coneR, coneH, 14),
+                    mat
                 );
                 cone.position.set(ox, coneY, oz);
                 cone.castShadow = true;
                 g.add(cone);
             }
 
+            // Random lean ±3° and full 360° y-rotation — no two trees identical
+            g.rotation.x = (Math.random() - 0.5) * 0.105;
+            g.rotation.z = (Math.random() - 0.5) * 0.105;
             g.rotation.y = Math.random() * Math.PI * 2;
-            g.rotation.z = (Math.random() - 0.5) * 0.06;
             g.position.set(x, 0, z);
             this.scene.add(g);
         };
@@ -352,19 +394,19 @@ class Renderer {
         const addBush = (x, z, scale = 1) => {
             const g   = new THREE.Group();
             const col = new THREE.Color(
-                0.12 + Math.random() * 0.08,
-                0.32 + Math.random() * 0.14,
-                0.04 + Math.random() * 0.04
+                0.10 + Math.random() * 0.06,
+                0.27 + Math.random() * 0.11,
+                0.03 + Math.random() * 0.03
             );
             [0, 1].forEach(() => {
                 const mesh = new THREE.Mesh(
-                    new THREE.SphereGeometry(scale * (0.35 + Math.random() * 0.2), 7, 5),
+                    new THREE.SphereGeometry(scale * (0.28 + Math.random() * 0.18), 6, 4),
                     new THREE.MeshLambertMaterial({ color: col })
                 );
-                mesh.scale.y = 0.6;
+                mesh.scale.y = 0.60;
                 mesh.position.set(
                     (Math.random() - 0.5) * scale * 0.5,
-                    scale * 0.32,
+                    scale * 0.26,
                     (Math.random() - 0.5) * scale * 0.5
                 );
                 g.add(mesh);
@@ -379,24 +421,31 @@ class Renderer {
         const depths = [8, 14, 20, 28, 36, 44, 52, 62, 75, 90, 110, 130];
 
         depths.forEach((d, i) => {
-            const jitter = (Math.random() - 0.5) * 4;
-            const scale  = 0.8 + Math.random() * 0.8;
-            addTree(leftX  + jitter,       -d, scale);
-            addTree(rightX - jitter,       -d, scale);
+            const jx  = (Math.random() - 0.5) * 4;
+            const jz  = (Math.random() - 0.5) * 3;
+            // Independent height (±20%) and width (±15%) per tree
+            const hL  = 0.82 + Math.random() * 0.38;
+            const wL  = 0.87 + Math.random() * 0.28;
+            const hR  = 0.82 + Math.random() * 0.38;
+            const wR  = 0.87 + Math.random() * 0.28;
+
+            addTree(leftX  + jx,       -d + jz, hL, wL);
+            addTree(rightX - jx,       -d - jz, hR, wR);
+
             if (i % 3 === 0) {
-                addTree(leftX  + jitter - 3.5, -d - 3, scale * 0.7);
-                addTree(rightX - jitter + 3.5, -d - 3, scale * 0.7);
+                addTree(leftX  + jx - 4, -d - 4, hL * 0.75, wL * 0.85);
+                addTree(rightX - jx + 4, -d - 4, hR * 0.75, wR * 0.85);
             }
         });
 
         for (let z = -5; z > -140; z -= 5) {
-            const s = 0.35 + Math.random() * 0.45;
+            const s = 0.30 + Math.random() * 0.42;
             if (Math.random() > 0.35) addBush(leftX  + (Math.random() - 0.5) * 5, z, s);
             if (Math.random() > 0.35) addBush(rightX + (Math.random() - 0.5) * 5, z, s);
         }
     }
 
-    // ── Target management ─────────────────────────────────────
+        // ── Target management ─────────────────────────────────────
 
     /** Call every frame — syncs 3D meshes with game target list */
     syncTargets() {
