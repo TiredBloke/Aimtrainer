@@ -67,7 +67,7 @@ class Renderer {
                 midColor:    { value: new THREE.Color(0x1a6090) },
                 horizonColor:{ value: new THREE.Color(0x9dd4f0) },
                 sunDir:      { value: new THREE.Vector3(-0.4, 0.75, -0.5).normalize() },
-                sunColor:    { value: new THREE.Color(1.0, 0.98, 0.85) },
+                sunColor:    { value: new THREE.Color(1.0, 0.88, 0.25) },
                 sunSize:     { value: 0.99996 },
                 sunGlowSize: { value: 0.9996 },
             },
@@ -289,28 +289,17 @@ class Renderer {
     }
 
     _buildFoliage() {
-        // Build a canvas bark texture for trunks
+        // Bark texture
         const barkTex = (() => {
             const cv = document.createElement('canvas');
-            cv.width = 64; cv.height = 128;
+            cv.width = 64; cv.height = 256;
             const cx = cv.getContext('2d');
-            cx.fillStyle = '#3a2210';
-            cx.fillRect(0, 0, 64, 128);
-            // Vertical bark streaks
-            for (let i = 0; i < 40; i++) {
-                const x = Math.random() * 64;
-                const w = Math.random() * 3 + 1;
-                const l = Math.random() * 80 + 20;
-                const y = Math.random() * 128;
-                const b = Math.floor(Math.random() * 30);
-                cx.fillStyle = `rgba(${20+b},${12+b},${5+b},0.6)`;
-                cx.fillRect(x, y, w, l);
-            }
-            // Subtle horizontal rings
-            for (let y = 0; y < 128; y += 8 + Math.random() * 6) {
-                cx.strokeStyle = 'rgba(0,0,0,0.2)';
-                cx.lineWidth = 0.5;
-                cx.beginPath(); cx.moveTo(0, y); cx.lineTo(64, y); cx.stroke();
+            cx.fillStyle = '#2e1a0a';
+            cx.fillRect(0, 0, 64, 256);
+            for (let i = 0; i < 60; i++) {
+                const v = Math.floor(Math.random() * 25);
+                cx.fillStyle = `rgba(${15+v},${10+v},${4+v},0.55)`;
+                cx.fillRect(Math.random() * 64, Math.random() * 256, Math.random() * 2.5 + 0.5, Math.random() * 120 + 30);
             }
             const t = new THREE.CanvasTexture(cv);
             t.wrapS = t.wrapT = THREE.RepeatWrapping;
@@ -320,113 +309,96 @@ class Renderer {
         const addTree = (x, z, scale = 1) => {
             const g = new THREE.Group();
 
-            // Trunk
-            const trunkH    = (1.8 + Math.random() * 1.0) * scale;
-            const trunkTopR = (0.07 + Math.random() * 0.03) * scale;
-            const trunkBotR = (0.16 + Math.random() * 0.05) * scale;
-            const trunkGeo  = new THREE.CylinderGeometry(trunkTopR, trunkBotR, trunkH, 10, 3);
-            const trunkMat  = new THREE.MeshLambertMaterial({ map: barkTex });
-            const trunk     = new THREE.Mesh(trunkGeo, trunkMat);
+            // Trunk — tapered cylinder
+            const trunkH = (1.6 + Math.random() * 1.2) * scale;
+            const trunk  = new THREE.Mesh(
+                new THREE.CylinderGeometry(0.08 * scale, 0.22 * scale, trunkH, 10),
+                new THREE.MeshLambertMaterial({ map: barkTex })
+            );
             trunk.position.y = trunkH * 0.5;
             trunk.castShadow = true;
             g.add(trunk);
 
-            // Canopy — many small blobs of varying sizes
-            // Defines the overall canopy envelope
-            const canopyH    = (2.8 + Math.random() * 2.0) * scale;
-            const canopyW    = (1.4 + Math.random() * 1.0) * scale;
-            const baseY      = trunkH * 0.85;
-            const blobCount  = 18 + Math.floor(Math.random() * 10);
+            // 4 overlapping cones, each starting slightly lower than the one above
+            // giving a layered pine/spruce silhouette
+            const totalH = (3.0 + Math.random() * 2.5) * scale;
+            const baseW  = (1.5 + Math.random() * 0.8) * scale;
+            const tiers  = 4;
 
-            for (let b = 0; b < blobCount; b++) {
-                // Distribute blobs across canopy height
-                const t      = Math.pow(Math.random(), 0.6); // bias toward mid/lower
-                const layer  = t;
+            // Alternate between two slightly different greens per tier
+            const darkGreen  = new THREE.Color(0x1e4a10);
+            const midGreen   = new THREE.Color(0x2d6318);
+            const lightGreen = new THREE.Color(0x3d7a22);
 
-                // Canopy narrows toward top and slightly toward bottom
-                const envelope = Math.sin(Math.pow(layer, 0.7) * Math.PI);
-                const spread   = canopyW * envelope * (0.2 + Math.random() * 0.8);
-                const angle    = Math.random() * Math.PI * 2;
+            for (let i = 0; i < tiers; i++) {
+                const t        = i / (tiers - 1);           // 0 = bottom tier, 1 = top
+                // Each tier gets narrower and taller toward the top
+                const coneR    = baseW * (0.95 - t * 0.55);
+                const coneH    = totalH * (0.5 + t * 0.15);
+                // Tiers overlap: bottom of each cone sits inside the one below
+                const coneY    = trunkH * 0.55 + t * totalH * 0.68;
+                // Tiny random offset so tiers aren't perfectly centred
+                const ox = (Math.random() - 0.5) * 0.12 * scale;
+                const oz = (Math.random() - 0.5) * 0.12 * scale;
 
-                const bx = Math.cos(angle) * spread;
-                const bz = Math.sin(angle) * spread;
-                const by = baseY + layer * canopyH + (Math.random() - 0.5) * canopyH * 0.15;
-
-                // Mix of blob sizes — mostly small, occasional larger anchor blobs
-                const isBig  = Math.random() < 0.2;
-                const blobR  = isBig
-                    ? (0.35 + Math.random() * 0.3) * canopyW * 0.5
-                    : (0.12 + Math.random() * 0.22) * canopyW * 0.5;
-
-                // Colour: sunlit top = warm bright green, shadowed base = cool dark
-                const sunlit  = layer * 0.7 + (1 - Math.abs(bx / canopyW)) * 0.3;
-                const rVal    = Math.floor(18  + sunlit * 30  + Math.random() * 12);
-                const gVal    = Math.floor(50  + sunlit * 50  + Math.random() * 18);
-                const bVal    = Math.floor(8   + sunlit * 6   + Math.random() * 8);
-                const col     = (rVal << 16) | (gVal << 8) | bVal;
-
-                const blobGeo = new THREE.SphereGeometry(blobR, 6, 5);
-                const blobMat = new THREE.MeshLambertMaterial({ color: col });
-                const blob    = new THREE.Mesh(blobGeo, blobMat);
-                blob.position.set(bx, by, bz);
-                // Slightly squash blobs horizontally for a leafier look
-                blob.scale.y = 0.7 + Math.random() * 0.4;
-                blob.castShadow    = true;
-                blob.receiveShadow = true;
-                g.add(blob);
+                const col = t < 0.33 ? darkGreen : t < 0.66 ? midGreen : lightGreen;
+                const cone = new THREE.Mesh(
+                    new THREE.ConeGeometry(coneR, coneH, 9),
+                    new THREE.MeshLambertMaterial({ color: col })
+                );
+                cone.position.set(ox, coneY, oz);
+                cone.castShadow = true;
+                g.add(cone);
             }
 
-            g.rotation.z = (Math.random() - 0.5) * 0.07;
-            g.rotation.x = (Math.random() - 0.5) * 0.04;
             g.rotation.y = Math.random() * Math.PI * 2;
+            g.rotation.z = (Math.random() - 0.5) * 0.06;
             g.position.set(x, 0, z);
             this.scene.add(g);
         };
 
         const addBush = (x, z, scale = 1) => {
-            const g          = new THREE.Group();
-            const blobCount  = 3 + Math.floor(Math.random() * 4);
-            for (let i = 0; i < blobCount; i++) {
-                const bx   = (Math.random() - 0.5) * scale * 0.9;
-                const by   = scale * 0.3 + Math.random() * scale * 0.3;
-                const bz   = (Math.random() - 0.5) * scale * 0.9;
-                const br   = scale * (0.3 + Math.random() * 0.3);
-                const gVal = Math.floor(75 + Math.random() * 35);
-                const col  = (Math.floor(25 + Math.random()*20) << 16) | (gVal << 8) | Math.floor(Math.random()*15);
+            const g   = new THREE.Group();
+            const col = new THREE.Color(
+                0.12 + Math.random() * 0.08,
+                0.32 + Math.random() * 0.14,
+                0.04 + Math.random() * 0.04
+            );
+            [0, 1].forEach(() => {
                 const mesh = new THREE.Mesh(
-                    new THREE.SphereGeometry(br, 6, 5),
+                    new THREE.SphereGeometry(scale * (0.35 + Math.random() * 0.2), 7, 5),
                     new THREE.MeshLambertMaterial({ color: col })
                 );
-                mesh.position.set(bx, by, bz);
+                mesh.scale.y = 0.6;
+                mesh.position.set(
+                    (Math.random() - 0.5) * scale * 0.5,
+                    scale * 0.32,
+                    (Math.random() - 0.5) * scale * 0.5
+                );
                 g.add(mesh);
-            }
-            g.position.set(x, 0, z);
+            });
             g.rotation.y = Math.random() * Math.PI * 2;
+            g.position.set(x, 0, z);
             this.scene.add(g);
         };
 
-        // Trees lining both sides well outside the shooting lane
         const leftX  = -20;
         const rightX =  20;
         const depths = [8, 14, 20, 28, 36, 44, 52, 62, 75, 90, 110, 130];
 
         depths.forEach((d, i) => {
             const jitter = (Math.random() - 0.5) * 4;
-            const scale  = 0.8 + Math.random() * 0.7;
-
-            addTree(leftX  + jitter,     -d, scale);
-            addTree(rightX - jitter,     -d, scale);
-
-            // Occasional extra tree in a cluster
+            const scale  = 0.8 + Math.random() * 0.8;
+            addTree(leftX  + jitter,       -d, scale);
+            addTree(rightX - jitter,       -d, scale);
             if (i % 3 === 0) {
-                addTree(leftX  + jitter - 3.5, -d - 3, scale * 0.75);
-                addTree(rightX - jitter + 3.5, -d - 3, scale * 0.75);
+                addTree(leftX  + jitter - 3.5, -d - 3, scale * 0.7);
+                addTree(rightX - jitter + 3.5, -d - 3, scale * 0.7);
             }
         });
 
-        // Bushes along the treeline
         for (let z = -5; z > -140; z -= 5) {
-            const s = 0.4 + Math.random() * 0.5;
+            const s = 0.35 + Math.random() * 0.45;
             if (Math.random() > 0.35) addBush(leftX  + (Math.random() - 0.5) * 5, z, s);
             if (Math.random() > 0.35) addBush(rightX + (Math.random() - 0.5) * 5, z, s);
         }
