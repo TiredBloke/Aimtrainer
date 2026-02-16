@@ -85,7 +85,7 @@ class Game {
     }
 
     _handleRespawns(dt) {
-        // Flick mode: spawn new target after each hit
+        // Flick mode: spawn new single target after it falls
         if (this._presetCfg?.key === 'flick') {
             const t = this.targets[0];
             if (!t || (t.isFalling && t.fallAngle <= -88)) {
@@ -98,11 +98,29 @@ class Game {
             return;
         }
 
-        // All other modes: reset fallen targets
-        this.targets.forEach(t => {
-            if (t.isFalling && t.fallAngle <= -89 && t.fallTimer > GAME_CONFIG.TARGET.RESET_DELAY)
-                t.reset();
-        });
+        // Peek mode: targets manage their own show/hide cycle, no batch reset
+        if (this.mode === 'peek') {
+            this.targets.forEach(t => {
+                if (t.isFalling && t.fallAngle <= -89 && t.fallTimer > GAME_CONFIG.TARGET.RESET_DELAY)
+                    t.reset();
+            });
+            return;
+        }
+
+        // All other modes: wait until EVERY target is down, then reset all at once
+        const activePeek = this.targets.filter(t => !t.isFalling);
+        const allDown    = activePeek.length === 0 && this.targets.length > 0;
+
+        if (allDown) {
+            // Count up a shared reset timer
+            this._allDownTimer = (this._allDownTimer || 0) + dt;
+            if (this._allDownTimer >= 0.6) {
+                this._allDownTimer = 0;
+                this.targets.forEach(t => t.reset());
+            }
+        } else {
+            this._allDownTimer = 0;
+        }
     }
 
     // ── Hit detection ─────────────────────────────────────────
@@ -146,6 +164,7 @@ class Game {
         this.mode           = mode;
         this._presetCfg     = null;
         this._presetSpawnWait = 0;
+        this._allDownTimer  = 0;
 
         this._reset();
 
