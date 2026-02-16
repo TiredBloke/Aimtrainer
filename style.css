@@ -567,3 +567,101 @@ body {
     text-shadow: 0 0 20px currentColor;
     box-shadow: 0 0 30px rgba(255,255,255,0.08);
 }
+
+/* ============================================================
+   RETICLE SELECTOR
+   ============================================================ */
+.start-footer {
+    margin-top: 12px;
+    display: flex;
+    justify-content: center;
+}
+
+.reticle-btn {
+    background: transparent;
+    border: 1px solid rgba(255,255,255,0.2);
+    border-radius: 6px;
+    color: #888;
+    font-family: monospace;
+    font-size: 13px;
+    padding: 6px 16px;
+    cursor: pointer;
+    transition: border-color 0.15s, color 0.15s;
+}
+.reticle-btn:hover {
+    border-color: rgba(255,255,255,0.5);
+    color: #ccc;
+}
+
+#reticle-panel {
+    position: absolute;
+    bottom: calc(50% - 180px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(10,10,10,0.96);
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 10px;
+    padding: 14px 18px;
+    pointer-events: all;
+    z-index: 300;
+    min-width: 280px;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.7);
+}
+
+.reticle-panel-title {
+    font-size: 11px;
+    color: #555;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    margin-bottom: 10px;
+}
+
+.reticle-presets {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    margin-bottom: 12px;
+}
+
+.reticle-preset-btn {
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 6px;
+    color: #999;
+    font-family: monospace;
+    font-size: 13px;
+    padding: 7px 12px;
+    text-align: left;
+    cursor: pointer;
+    transition: background 0.1s, border-color 0.1s, color 0.1s;
+}
+.reticle-preset-btn:hover {
+    background: rgba(255,255,255,0.08);
+    color: #ddd;
+}
+.reticle-preset-btn.active {
+    border-color: #00ff88;
+    color: #00ff88;
+    background: rgba(0,255,136,0.08);
+}
+
+.reticle-colors {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+}
+
+.reticle-color-btn {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    border: 2px solid rgba(0,0,0,0.4);
+    cursor: pointer;
+    transition: transform 0.1s, border-color 0.1s;
+}
+.reticle-color-btn:hover  { transform: scale(1.15); }
+.reticle-color-btn.active {
+    border-color: #fff;
+    transform: scale(1.2);
+    box-shadow: 0 0 8px rgba(255,255,255,0.5);
+}

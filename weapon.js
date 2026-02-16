@@ -81,45 +81,7 @@ class Weapon {
     // ── Crosshair rendering ───────────────────────────────────
 
     drawDynamicCrosshair(ctx, cx, cy) {
-        const C           = GAME_CONFIG.WEAPON.CROSSHAIR;
         const spreadRatio = this.spread.current / GAME_CONFIG.WEAPON.SPREAD.MAX;
-        const size        = C.SIZE_BASE + spreadRatio * (C.SIZE_MAX - C.SIZE_BASE);
-        const gap         = C.GAP;
-
-        // Color shifts white → red as spread grows
-        const r = Math.round(255);
-        const g = Math.round(255 * (1 - spreadRatio));
-        const b = Math.round(255 * (1 - spreadRatio));
-        const color = `rgba(${r},${g},${b},0.85)`;
-
-        ctx.save();
-        ctx.strokeStyle    = color;
-        ctx.lineWidth      = C.THICKNESS;
-        ctx.lineCap        = 'round';
-        ctx.shadowColor    = 'rgba(0,0,0,0.8)';
-        ctx.shadowBlur     = 3;
-
-        // Four arms
-        this._arm(ctx, cx, cy,  cx,              cy - gap - size); // up
-        this._arm(ctx, cx, cy,  cx,              cy + gap + size); // down
-        this._arm(ctx, cx, cy,  cx - gap - size, cy);              // left
-        this._arm(ctx, cx, cy,  cx + gap + size, cy);              // right
-
-        // Centre dot when accurate
-        if (spreadRatio < 0.3) {
-            ctx.fillStyle = color;
-            ctx.beginPath();
-            ctx.arc(cx, cy, 1.5, 0, Math.PI * 2);
-            ctx.fill();
-        }
-
-        ctx.restore();
-    }
-
-    _arm(ctx, x1, y1, x2, y2) {
-        ctx.beginPath();
-        ctx.moveTo(x1, y1);
-        ctx.lineTo(x2, y2);
-        ctx.stroke();
+        CrosshairSettings.draw(ctx, cx, cy, spreadRatio);
     }
 }

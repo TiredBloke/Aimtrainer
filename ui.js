@@ -122,6 +122,9 @@ class UIManager {
                 </button>
             </div>
             <button class="mode-btn start-btn" id="btn-start">▶&nbsp;&nbsp;Start Round</button>
+            <div class="start-footer">
+                <button class="reticle-btn" id="btn-reticle">⊕ Reticle</button>
+            </div>
             <p class="mode-hint">Click the range to capture your mouse · Esc to return here</p>
         `;
         this.overlay.appendChild(this.modePanel);
@@ -147,6 +150,75 @@ class UIManager {
             this.showTimer();
             this.game.startMode(this._selectedMode);
         });
+
+        document.getElementById('btn-reticle').addEventListener('click', (e) => {
+            e.stopPropagation();
+            this._showReticlePanel();
+        });
+    }
+
+    _showReticlePanel() {
+        // Remove any existing panel
+        document.getElementById('reticle-panel')?.remove();
+
+        const LABELS = {
+            dot:        '·  Dot',
+            small_cross:'+ Small Cross',
+            large_cross:'✛ Large Cross',
+            ring:       '○ Ring',
+            cross_gap:  '⊕ Cross Gap',
+        };
+        const COLOR_HEX = {
+            white: '#ffffff', green: '#00ff78',
+            cyan: '#00dcff',  yellow: '#ffe600', pink: '#ff50b4'
+        };
+
+        const panel = _el('div', { id: 'reticle-panel' });
+        panel.innerHTML = `
+            <div class="reticle-panel-title">Reticle</div>
+            <div class="reticle-presets">
+                ${CrosshairSettings.PRESETS.map(p => `
+                    <button class="reticle-preset-btn ${CrosshairSettings.preset === p ? 'active' : ''}"
+                            data-preset="${p}">${LABELS[p]}</button>
+                `).join('')}
+            </div>
+            <div class="reticle-colors">
+                ${Object.entries(COLOR_HEX).map(([name, hex]) => `
+                    <button class="reticle-color-btn ${CrosshairSettings.color === name ? 'active' : ''}"
+                            data-color="${name}"
+                            style="background:${hex}"
+                            title="${name}"></button>
+                `).join('')}
+            </div>
+        `;
+        this.overlay.appendChild(panel);
+
+        panel.querySelectorAll('.reticle-preset-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                CrosshairSettings.set(btn.dataset.preset, null);
+                panel.querySelectorAll('.reticle-preset-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+            });
+        });
+
+        panel.querySelectorAll('.reticle-color-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                CrosshairSettings.set(null, btn.dataset.color);
+                panel.querySelectorAll('.reticle-color-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+            });
+        });
+
+        // Click outside to close
+        setTimeout(() => {
+            const close = (e) => {
+                if (!panel.contains(e.target) && e.target.id !== 'btn-reticle') {
+                    panel.remove();
+                    document.removeEventListener('click', close);
+                }
+            };
+            document.addEventListener('click', close);
+        }, 50);
     }
 
     showModePanel() {
