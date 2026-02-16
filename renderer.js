@@ -66,10 +66,10 @@ class Renderer {
                 topColor:    { value: new THREE.Color(0x0d2b4e) },
                 midColor:    { value: new THREE.Color(0x1a6090) },
                 horizonColor:{ value: new THREE.Color(0x9dd4f0) },
-                sunDir:      { value: new THREE.Vector3(-0.5, 0.6, -0.6).normalize() },
-                sunColor:    { value: new THREE.Color(1.0, 0.95, 0.7) },
-                sunSize:     { value: 0.99992 },
-                sunGlowSize: { value: 0.9992 },
+                sunDir:      { value: new THREE.Vector3(-0.4, 0.75, -0.5).normalize() },
+                sunColor:    { value: new THREE.Color(1.0, 0.98, 0.85) },
+                sunSize:     { value: 0.99996 },
+                sunGlowSize: { value: 0.9996 },
             },
             vertexShader: `
                 varying vec3 vWorldPos;
@@ -103,8 +103,8 @@ class Renderer {
 
                     // Sun disc + glow
                     float cosAngle = dot(dir, normalize(sunDir));
-                    float sun  = smoothstep(sunSize,      sunSize + 0.0001, cosAngle);
-                    float glow = smoothstep(sunGlowSize - 0.001, sunGlowSize, cosAngle) * 0.25;
+                    float sun  = smoothstep(sunSize, sunSize + 0.00002, cosAngle);
+                    float glow = smoothstep(sunGlowSize - 0.0003, sunGlowSize, cosAngle) * 0.15;
                     vec3 col = sky + sunColor * (sun + glow);
 
                     // Horizon haze
@@ -320,10 +320,10 @@ class Renderer {
         const addTree = (x, z, scale = 1) => {
             const g = new THREE.Group();
 
-            // Trunk — tapered, more segments for roundness
-            const trunkH    = (2.0 + Math.random() * 0.8) * scale;
-            const trunkTopR = (0.08 + Math.random() * 0.04) * scale;
-            const trunkBotR = (0.18 + Math.random() * 0.06) * scale;
+            // Trunk
+            const trunkH    = (1.8 + Math.random() * 1.0) * scale;
+            const trunkTopR = (0.07 + Math.random() * 0.03) * scale;
+            const trunkBotR = (0.16 + Math.random() * 0.05) * scale;
             const trunkGeo  = new THREE.CylinderGeometry(trunkTopR, trunkBotR, trunkH, 10, 3);
             const trunkMat  = new THREE.MeshLambertMaterial({ map: barkTex });
             const trunk     = new THREE.Mesh(trunkGeo, trunkMat);
@@ -331,45 +331,53 @@ class Renderer {
             trunk.castShadow = true;
             g.add(trunk);
 
-            // Foliage — cluster of overlapping blobs, not cones
-            const treeH      = (3.5 + Math.random() * 2.5) * scale;
-            const treeW      = (1.8 + Math.random() * 1.2) * scale;
-            const blobCount  = 8 + Math.floor(Math.random() * 6);
-            const baseY      = trunkH * 0.7;
+            // Canopy — many small blobs of varying sizes
+            // Defines the overall canopy envelope
+            const canopyH    = (2.8 + Math.random() * 2.0) * scale;
+            const canopyW    = (1.4 + Math.random() * 1.0) * scale;
+            const baseY      = trunkH * 0.85;
+            const blobCount  = 18 + Math.floor(Math.random() * 10);
 
             for (let b = 0; b < blobCount; b++) {
-                const t        = b / blobCount; // 0 = low, 1 = top
-                const layer    = Math.pow(t, 0.7); // concentrate more at mid
+                // Distribute blobs across canopy height
+                const t      = Math.pow(Math.random(), 0.6); // bias toward mid/lower
+                const layer  = t;
 
-                // Position: wider at mid, narrow at top
-                const spread = treeW * (1 - layer * 0.7) * (0.3 + Math.random() * 0.7);
-                const angle  = Math.random() * Math.PI * 2;
-                const bx     = Math.cos(angle) * spread;
-                const bz     = Math.sin(angle) * spread;
-                const by     = baseY + layer * treeH + (Math.random() - 0.5) * treeH * 0.2;
+                // Canopy narrows toward top and slightly toward bottom
+                const envelope = Math.sin(Math.pow(layer, 0.7) * Math.PI);
+                const spread   = canopyW * envelope * (0.2 + Math.random() * 0.8);
+                const angle    = Math.random() * Math.PI * 2;
 
-                // Size: bigger in middle, smaller at top/bottom
-                const sizeFactor = 0.5 + Math.sin(layer * Math.PI) * 0.5;
-                const blobR  = (0.5 + Math.random() * 0.6) * treeW * 0.5 * sizeFactor;
+                const bx = Math.cos(angle) * spread;
+                const bz = Math.sin(angle) * spread;
+                const by = baseY + layer * canopyH + (Math.random() - 0.5) * canopyH * 0.15;
 
-                // Colour: warm bright green top, cool dark green bottom
-                const rVal = Math.floor(20  + layer * 25  + Math.random() * 15);
-                const gVal = Math.floor(55  + layer * 40  + Math.random() * 20);
-                const bVal = Math.floor(10  + layer * 8   + Math.random() * 10);
-                const col  = (rVal << 16) | (gVal << 8) | bVal;
+                // Mix of blob sizes — mostly small, occasional larger anchor blobs
+                const isBig  = Math.random() < 0.2;
+                const blobR  = isBig
+                    ? (0.35 + Math.random() * 0.3) * canopyW * 0.5
+                    : (0.12 + Math.random() * 0.22) * canopyW * 0.5;
 
-                const blobGeo = new THREE.SphereGeometry(blobR, 7, 6);
+                // Colour: sunlit top = warm bright green, shadowed base = cool dark
+                const sunlit  = layer * 0.7 + (1 - Math.abs(bx / canopyW)) * 0.3;
+                const rVal    = Math.floor(18  + sunlit * 30  + Math.random() * 12);
+                const gVal    = Math.floor(50  + sunlit * 50  + Math.random() * 18);
+                const bVal    = Math.floor(8   + sunlit * 6   + Math.random() * 8);
+                const col     = (rVal << 16) | (gVal << 8) | bVal;
+
+                const blobGeo = new THREE.SphereGeometry(blobR, 6, 5);
                 const blobMat = new THREE.MeshLambertMaterial({ color: col });
                 const blob    = new THREE.Mesh(blobGeo, blobMat);
                 blob.position.set(bx, by, bz);
+                // Slightly squash blobs horizontally for a leafier look
+                blob.scale.y = 0.7 + Math.random() * 0.4;
                 blob.castShadow    = true;
                 blob.receiveShadow = true;
                 g.add(blob);
             }
 
-            // Slight random lean for naturalness
-            g.rotation.z = (Math.random() - 0.5) * 0.08;
-            g.rotation.x = (Math.random() - 0.5) * 0.05;
+            g.rotation.z = (Math.random() - 0.5) * 0.07;
+            g.rotation.x = (Math.random() - 0.5) * 0.04;
             g.rotation.y = Math.random() * Math.PI * 2;
             g.position.set(x, 0, z);
             this.scene.add(g);
