@@ -58,7 +58,6 @@ class Renderer {
     }
 
     _buildSky() {
-        // Procedural sky using a large sphere with a shader material
         const skyGeo = new THREE.SphereGeometry(800, 32, 15);
 
         const skyMat = new THREE.ShaderMaterial({
@@ -66,10 +65,10 @@ class Renderer {
                 topColor:    { value: new THREE.Color(0x0d2b4e) },
                 midColor:    { value: new THREE.Color(0x1a6090) },
                 horizonColor:{ value: new THREE.Color(0x9dd4f0) },
-                sunDir:      { value: new THREE.Vector3(-0.4, 0.75, -0.5).normalize() },
+                sunDir:      { value: new THREE.Vector3(-0.55, 0.55, 0.62).normalize() },
                 sunColor:    { value: new THREE.Color(1.0, 0.88, 0.25) },
-                sunSize:     { value: 0.99996 },
-                sunGlowSize: { value: 0.9996 },
+                sunSize:     { value: 0.9997 },
+                sunGlowSize: { value: 0.992 },
             },
             vertexShader: `
                 varying vec3 vWorldPos;
@@ -92,8 +91,7 @@ class Renderer {
                 void main() {
                     vec3 dir = normalize(vWorldPos);
 
-                    // Sky gradient based on elevation
-                    float h = dir.y; // -1 (down) to 1 (up)
+                    float h = dir.y;
                     vec3 sky;
                     if (h > 0.0) {
                         sky = mix(horizonColor, mix(midColor, topColor, h), h);
@@ -101,13 +99,11 @@ class Renderer {
                         sky = horizonColor;
                     }
 
-                    // Sun disc + glow
                     float cosAngle = dot(dir, normalize(sunDir));
-                    float sun  = smoothstep(sunSize, sunSize + 0.00002, cosAngle);
-                    float glow = smoothstep(sunGlowSize - 0.0003, sunGlowSize, cosAngle) * 0.15;
-                    vec3 col = sky + sunColor * (sun + glow);
+                    float sun  = smoothstep(sunSize, sunSize + 0.0001, cosAngle);
+                    float glow = smoothstep(sunGlowSize - 0.008, sunGlowSize, cosAngle) * 0.45;
+                    vec3 col = sky + sunColor * (sun * 2.0 + glow);
 
-                    // Horizon haze
                     float haze = 1.0 - smoothstep(-0.05, 0.15, h);
                     col = mix(col, horizonColor * 1.2, haze * 0.55);
 
@@ -119,8 +115,6 @@ class Renderer {
 
         this.skyMesh = new THREE.Mesh(skyGeo, skyMat);
         this.scene.add(this.skyMesh);
-
-        // Clouds — textured planes floating in sky
         this._buildClouds();
     }
 
@@ -309,42 +303,40 @@ class Renderer {
         const addTree = (x, z, scale = 1) => {
             const g = new THREE.Group();
 
-            // Trunk — tapered cylinder
-            const trunkH = (1.6 + Math.random() * 1.2) * scale;
+            // Trunk — solid warm brown, no texture (lambert handles shading fine)
+            const trunkH = (2.2 + Math.random() * 1.4) * scale;
             const trunk  = new THREE.Mesh(
-                new THREE.CylinderGeometry(0.08 * scale, 0.22 * scale, trunkH, 10),
-                new THREE.MeshLambertMaterial({ map: barkTex })
+                new THREE.CylinderGeometry(0.09 * scale, 0.26 * scale, trunkH, 12),
+                new THREE.MeshLambertMaterial({ color: 0x4a2e0e })
             );
             trunk.position.y = trunkH * 0.5;
             trunk.castShadow = true;
             g.add(trunk);
 
-            // 4 overlapping cones, each starting slightly lower than the one above
-            // giving a layered pine/spruce silhouette
-            const totalH = (3.0 + Math.random() * 2.5) * scale;
-            const baseW  = (1.5 + Math.random() * 0.8) * scale;
+            // 4 overlapping cones — taller overall, dark at base to light at top
+            const totalH = (5.0 + Math.random() * 3.5) * scale;
+            const baseW  = (1.6 + Math.random() * 0.8) * scale;
             const tiers  = 4;
 
-            // Alternate between two slightly different greens per tier
-            const darkGreen  = new THREE.Color(0x1e4a10);
-            const midGreen   = new THREE.Color(0x2d6318);
-            const lightGreen = new THREE.Color(0x3d7a22);
+            // Colour ramp: very dark base → mid → light bright top
+            const tierColors = [
+                new THREE.Color(0x143a08),  // very dark green base
+                new THREE.Color(0x1e5410),  // dark green
+                new THREE.Color(0x2d6e1a),  // mid green
+                new THREE.Color(0x3d8a24),  // bright light green tip
+            ];
 
             for (let i = 0; i < tiers; i++) {
-                const t        = i / (tiers - 1);           // 0 = bottom tier, 1 = top
-                // Each tier gets narrower and taller toward the top
-                const coneR    = baseW * (0.95 - t * 0.55);
-                const coneH    = totalH * (0.5 + t * 0.15);
-                // Tiers overlap: bottom of each cone sits inside the one below
-                const coneY    = trunkH * 0.55 + t * totalH * 0.68;
-                // Tiny random offset so tiers aren't perfectly centred
-                const ox = (Math.random() - 0.5) * 0.12 * scale;
-                const oz = (Math.random() - 0.5) * 0.12 * scale;
+                const t     = i / (tiers - 1);
+                const coneR = baseW * (0.92 - t * 0.52);
+                const coneH = totalH * (0.52 + t * 0.12);
+                const coneY = trunkH * 0.5 + t * totalH * 0.70;
+                const ox    = (Math.random() - 0.5) * 0.10 * scale;
+                const oz    = (Math.random() - 0.5) * 0.10 * scale;
 
-                const col = t < 0.33 ? darkGreen : t < 0.66 ? midGreen : lightGreen;
                 const cone = new THREE.Mesh(
-                    new THREE.ConeGeometry(coneR, coneH, 9),
-                    new THREE.MeshLambertMaterial({ color: col })
+                    new THREE.ConeGeometry(coneR, coneH, 16),  // 16 segments — smooth
+                    new THREE.MeshLambertMaterial({ color: tierColors[i] })
                 );
                 cone.position.set(ox, coneY, oz);
                 cone.castShadow = true;
