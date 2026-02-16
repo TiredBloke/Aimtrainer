@@ -1,16 +1,12 @@
 /**
- * game.js — Core game loop, mode management, hit detection, stats.
- * Rendering delegated to Renderer (Three.js).
- * Hit detection uses renderer.castRay() instead of worldToScreen.
+ * game.js — Core game loop. All modes run 30s.
  */
 
 class Game {
     constructor() {
-        // Dimensions (still needed for crosshair clamping)
         this.width  = window.innerWidth;
         this.height = window.innerHeight;
 
-        // Timing
         this.lastFrameTime = 0;
         this.deltaTime     = 0;
         this.totalTime     = 0;
@@ -18,25 +14,19 @@ class Game {
         this._fpsTimer     = 0;
         this._fpsCount     = 0;
 
-        // Camera stub — horizonY kept for input.js crosshair default position
         this.camera = { horizonY: window.innerHeight * 0.45 };
 
-        // Systems
         this.audio        = new AudioManager();
         this.weapon       = new Weapon();
         this.statsManager = new StatsManager();
 
-        // Runtime state
-        this.targets   = [];
-        this.particles = []; // kept for audio/visual hooks, not rendered in 3D yet
-        this.mode      = 'freeplay';
-        this._lastMode   = 'freeplay';
-        this._lastPreset = null;
-
-        this.timer = { active: false, remaining: 0 };
-        this.stats = this._blankStats();
-
-        this._presetCfg       = null;
+        this.targets        = [];
+        this.particles      = [];
+        this.mode           = 'static';
+        this._lastMode      = 'static';
+        this.timer          = { active: false, remaining: 0 };
+        this.stats          = this._blankStats();
+        this._presetCfg     = null;
         this._presetSpawnWait = 0;
 
         window.addEventListener('resize', () => {
@@ -53,20 +43,15 @@ class Game {
         this.ui       = new UIManager(this);
         this.input    = new InputHandler(this);
 
-        const onFirstClick = () => {
+        document.addEventListener('click', () => {
             this.audio.init();
             this.audio.resume();
-            document.removeEventListener('click', onFirstClick);
-        };
-        document.addEventListener('click', onFirstClick);
+        }, { once: true });
 
-        setTimeout(() => this.ui.showCrosshairHint(), 600);
-
+        // Start with targets visible in background while on menu
         this._createTargets('static');
         this._loop(0);
     }
-
-    // ── Main loop ─────────────────────────────────────────────
 
     _loop(timestamp) {
         this.deltaTime     = Math.min((timestamp - this.lastFrameTime) / 1000, 0.1);
@@ -83,11 +68,8 @@ class Game {
 
         this._update(this.deltaTime);
         this.renderer.render();
-
         requestAnimationFrame(ts => this._loop(ts));
     }
-
-    // ── Update ────────────────────────────────────────────────
 
     _update(dt) {
         this.weapon.update(dt);
@@ -103,6 +85,7 @@ class Game {
     }
 
     _handleRespawns(dt) {
+        // Flick mode: spawn new target after each hit
         if (this._presetCfg?.key === 'flick') {
             const t = this.targets[0];
             if (!t || (t.isFalling && t.fallAngle <= -88)) {
@@ -115,34 +98,28 @@ class Game {
             return;
         }
 
+        // All other modes: reset fallen targets
         this.targets.forEach(t => {
             if (t.isFalling && t.fallAngle <= -89 && t.fallTimer > GAME_CONFIG.TARGET.RESET_DELAY)
                 t.reset();
         });
     }
 
-    // ── Hit detection (raycasting via Three.js) ───────────────
+    // ── Hit detection ─────────────────────────────────────────
 
     checkTargetHit(cx, cy, spreadOffset) {
-        const sx = cx + spreadOffset.x;
-        const sy = cy + spreadOffset.y;
-
-        const result = this.renderer.castRay(sx, sy);
-
-        if (result.hit) {
-            this._spawnHitSparks(result.target);
-            return result;
-        }
-
-        return { hit: false, target: null, isCenterHit: false };
+        const result = this.renderer.castRay(
+            cx + spreadOffset.x,
+            cy + spreadOffset.y
+        );
+        return result.hit ? result : { hit: false, target: null, isCenterHit: false };
     }
 
-    // ── Stat recording ────────────────────────────────────────
+    // ── Stats ─────────────────────────────────────────────────
 
     recordShot(hit, reactionMs = 0) {
         const s = this.stats;
         s.shots++;
-
         if (hit) {
             s.hits++;
             if (reactionMs > 0 && reactionMs < 5000) {
@@ -152,68 +129,45 @@ class Game {
                 s.avgReaction = sum / s.reactionTimes.length;
                 if (s.reactionTimes.length > 1) {
                     const mean = s.avgReaction;
-                    const variance = s.reactionTimes.reduce((a, t) => a + (t - mean) ** 2, 0) / s.reactionTimes.length;
-                    s.consistency = Math.sqrt(variance);
+                    const v = s.reactionTimes.reduce((a, t) => a + (t - mean) ** 2, 0) / s.reactionTimes.length;
+                    s.consistency = Math.sqrt(v);
                 }
             }
         }
-
         const accuracy = s.shots > 0 ? (s.hits / s.shots) * 100 : 0;
         this.ui.updateStats(s.shots, s.hits, accuracy);
         this.ui.updateReactionStats(s.avgReaction, s.bestReaction, s.consistency);
     }
 
-    // ── Mode management ───────────────────────────────────────
+    // ── Mode start — always 30 seconds ────────────────────────
 
     startMode(mode) {
-        const durations = { timed: 30, strafe: 30, peek: 30, micro: 45, freeplay: 0 };
-        this._lastMode   = mode;
-        this._lastPreset = null;
-        this.mode        = mode;
-        this._presetCfg  = null;
-
-        this._reset();
-
-        const typeMap = { timed: 'static', strafe: 'strafe', peek: 'peek', micro: 'micro', freeplay: 'static' };
-        this._createTargets(typeMap[mode] || 'static');
-
-        const dur = durations[mode] ?? 0;
-        if (dur > 0) {
-            this.timer = { active: true, remaining: dur };
-            this.ui.showTimer();
-            this.ui.updateTimer(dur);
-        } else {
-            this.timer = { active: false, remaining: 0 };
-            this.ui.hideTimer();
-        }
-    }
-
-    startPreset(key) {
-        const cfg = GAME_CONFIG.PRESETS[key];
-        if (!cfg) return;
-
-        this._lastMode   = null;
-        this._lastPreset = key;
-        this.mode        = `preset-${key}`;
-        this._presetCfg  = { key, cfg };
+        this._lastMode      = mode;
+        this.mode           = mode;
+        this._presetCfg     = null;
         this._presetSpawnWait = 0;
 
         this._reset();
-        this.targets = [];
 
-        if (key === 'flick')         this._spawnFlickTarget();
-        else if (key === 'tracking') this._spawnTrackingTargets(cfg);
-        else                         this._spawnMicroAdjustTargets(cfg);
+        if (mode === 'flick') {
+            this.targets = [];
+            this._spawnFlickTarget();
+            this._presetCfg = { key: 'flick', cfg: GAME_CONFIG.PRESETS.flick };
+        } else {
+            const typeMap = { static: 'static', strafe: 'strafe', peek: 'peek', micro: 'micro' };
+            this._createTargets(typeMap[mode] || 'static');
+        }
 
-        this.timer = { active: true, remaining: cfg.timerS };
+        this.timer = { active: true, remaining: 30 };
         this.ui.showTimer();
-        this.ui.updateTimer(cfg.timerS);
+        this.ui.updateTimer(30);
     }
 
-    restartLastMode() {
-        if (this._lastPreset) this.startPreset(this._lastPreset);
-        else                  this.startMode(this._lastMode || 'timed');
-    }
+    // kept for compatibility but not used in new flow
+    startPreset(key) { this.startMode(key); }
+    restartLastMode() { this.startMode(this._lastMode || 'static'); }
+
+    // ── Session end ───────────────────────────────────────────
 
     _endSession() {
         this.timer = { active: false, remaining: 0 };
@@ -223,12 +177,17 @@ class Game {
         const accuracy = s.shots > 0 ? (s.hits / s.shots) * 100 : 0;
 
         this.statsManager.save({
-            mode: this.mode, shots: s.shots, hits: s.hits,
-            accuracy, reactionMs: s.bestReaction < Infinity ? s.bestReaction : null
+            mode:       this.mode,
+            shots:      s.shots,
+            hits:       s.hits,
+            accuracy,
+            reactionMs: s.bestReaction < Infinity ? s.bestReaction : null
         });
 
         this.ui.showGameOver({
-            shots: s.shots, hits: s.hits, accuracy,
+            shots:       s.shots,
+            hits:        s.hits,
+            accuracy,
             avgReaction:  s.avgReaction,
             bestReaction: s.bestReaction < Infinity ? s.bestReaction : 0,
             consistency:  s.consistency
@@ -253,29 +212,6 @@ class Game {
         const x     = Math.cos(angle) * cfg.spawnRadius;
         const d     = cfg.distances[Math.floor(Math.random() * cfg.distances.length)];
         this.targets = [new Target(x, 0, d, 'static')];
-    }
-
-    _spawnTrackingTargets(cfg) {
-        cfg.distances.forEach((d, i) => {
-            const t = new Target((Math.random() - 0.5) * 1.0, 0, d, 'strafe');
-            t.strafe.speed = cfg.speeds[i] ?? 0.35;
-            this.targets.push(t);
-        });
-    }
-
-    _spawnMicroAdjustTargets(cfg) {
-        const cx = (Math.random() - 0.5) * 0.4;
-        cfg.distances.forEach(d => {
-            const x = cx + (Math.random() - 0.5) * cfg.spawnRadius;
-            this.targets.push(new Target(x, 0, d, 'micro'));
-        });
-    }
-
-    // ── Particles (audio/visual triggers only in 3D) ──────────
-
-    _spawnHitSparks(target) {
-        // In 3D we handle this via target.impactFlash
-        // Audio cue is handled in input.js
     }
 
     // ── Helpers ───────────────────────────────────────────────

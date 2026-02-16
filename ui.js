@@ -1,34 +1,43 @@
 /**
- * ui.js — All DOM-based UI: mode panel, stats panel, game-over screen
+ * ui.js — Start screen (mode select) → 30s round → end stats
  */
 
 class UIManager {
     constructor(game) {
-        this.game    = game;
-        this.overlay = document.getElementById('ui-overlay');
+        this.game          = game;
+        this.overlay       = document.getElementById('ui-overlay');
+        this._selectedMode = 'static';
+        this._lastReaction = null;
 
         this._buildStatsPanel();
         this._buildModePanel();
     }
 
-    // ── Stats panel (always visible during play) ──────────────
+    // ── Live stats panel (top-right, visible during round) ────
 
     _buildStatsPanel() {
         this.statsPanel = _el('div', { id: 'stats-panel' });
         this.statsPanel.innerHTML = `
-            <div class="stat-row"><span class="stat-label">Shots</span><span class="stat-value" id="sv-shots">0</span></div>
-            <div class="stat-row"><span class="stat-label">Hits</span><span class="stat-value" id="sv-hits">0</span></div>
-            <div class="stat-row"><span class="stat-label">Accuracy</span><span class="stat-value" id="sv-acc">0%</span></div>
+            <div class="stat-row">
+                <span class="stat-label">Hits</span>
+                <span class="stat-value" id="sv-hits">0</span>
+            </div>
+            <div class="stat-row">
+                <span class="stat-label">Shots</span>
+                <span class="stat-value" id="sv-shots">0</span>
+            </div>
+            <div class="stat-row">
+                <span class="stat-label">Accuracy</span>
+                <span class="stat-value" id="sv-acc">0.0%</span>
+            </div>
             <div class="stat-divider"></div>
-            <div class="stat-row"><span class="stat-label">Avg RT</span><span class="stat-value" id="sv-avg-rt">--</span></div>
-            <div class="stat-row"><span class="stat-label">Best RT</span><span class="stat-value" id="sv-best-rt">--</span></div>
-            <div class="stat-row"><span class="stat-label">Consistency</span><span class="stat-value" id="sv-cons">--</span></div>
-            <div class="stat-row timer-row" id="timer-row" style="display:none">
+            <div class="stat-row" id="timer-row">
                 <span class="stat-label">Time</span>
                 <span class="stat-value timer" id="sv-timer">30.0s</span>
             </div>
         `;
         this.overlay.appendChild(this.statsPanel);
+        this.statsPanel.style.display = 'none';
     }
 
     updateStats(shots, hits, accuracy) {
@@ -38,137 +47,147 @@ class UIManager {
     }
 
     updateReactionStats(avg, best, consistency) {
-        _setReactionText('sv-avg-rt',  avg,         200, 300, 400);
-        _setReactionText('sv-cons',    consistency, 30,  50,  80);
-
-        const bestEl = document.getElementById('sv-best-rt');
-        if (best < Infinity) {
-            bestEl.textContent  = best.toFixed(0) + 'ms';
-            bestEl.style.color  = '#00ffff';
-        } else {
-            bestEl.textContent  = '--';
-            bestEl.style.color  = '#00ff00';
-        }
+        this._lastReaction = { avg, best, consistency };
     }
 
     resetStats() {
         this.updateStats(0, 0, 0);
-        this.updateReactionStats(0, Infinity, 0);
+        _setText('sv-timer', '30.0s');
+        this._lastReaction = null;
     }
 
-    showTimer() {
-        document.getElementById('timer-row').style.display = 'flex';
-    }
-
-    hideTimer() {
-        document.getElementById('timer-row').style.display = 'none';
-    }
+    showTimer() { this.statsPanel.style.display = 'block'; }
+    hideTimer() { this.statsPanel.style.display = 'none';  }
 
     updateTimer(remaining) {
         const el = document.getElementById('sv-timer');
+        if (!el) return;
         el.textContent = Math.max(0, remaining).toFixed(1) + 's';
-        el.style.color = remaining > 10 ? '#00ff00' : remaining > 5 ? '#ffaa00' : '#ff4444';
+        el.style.color = remaining > 10 ? '#00ff00'
+                       : remaining > 5  ? '#ffaa00'
+                       : '#ff4444';
     }
 
-    // ── Mode panel (start screen) ─────────────────────────────
+    // ── Start / mode-select screen ────────────────────────────
 
     _buildModePanel() {
-        const s   = this.game.statsManager.display();
+        const s        = this.game.statsManager.display();
         const hasStats = s.sessions > 0;
 
         const statsBlock = hasStats ? `
             <div class="persistent-stats">
-                <h3>Your Stats</h3>
                 <div class="persistent-stats-grid">
-                    ${_statCell(s.bestAccuracy.toFixed(1) + '%', 'Best Accuracy')}
+                    ${_statCell(s.bestAccuracy.toFixed(1) + '%',                               'Best Accuracy')}
                     ${_statCell(s.bestReactionMs > 0 ? s.bestReactionMs.toFixed(0) + 'ms' : '--', 'Best Reaction')}
-                    ${_statCell(_fmtNum(s.totalShots), 'Total Shots')}
-                    ${_statCell(s.lifetimeAcc.toFixed(1) + '%', 'Lifetime Accuracy')}
+                    ${_statCell(_fmtNum(s.totalShots),                                         'Total Shots')}
+                    ${_statCell(s.lifetimeAcc.toFixed(1) + '%',                               'Lifetime Acc')}
                 </div>
                 <div class="stats-footer">
-                    <span>Sessions: ${s.sessions}</span>
+                    <span>${s.sessions} session${s.sessions !== 1 ? 's' : ''}</span>
                     <span>•</span>
-                    <span>Last played: ${this.game.statsManager.lastPlayedText()}</span>
+                    <span>Last: ${this.game.statsManager.lastPlayedText()}</span>
                 </div>
-            </div>` : `
-            <div class="persistent-stats">
-                <p class="no-stats">Complete a timed session to start tracking your progress.</p>
-            </div>`;
+            </div>` : '';
 
         this.modePanel = _el('div', { id: 'mode-panel' });
         this.modePanel.innerHTML = `
             <h2>FPS Aim Trainer</h2>
+            <p class="mode-subtitle">Select a mode · 30 second round</p>
             ${statsBlock}
-            <div class="mode-section">
-                <h3>Basic</h3>
-                <div class="mode-buttons">
-                    <button class="mode-btn" data-mode="freeplay">Free Play</button>
-                    <button class="mode-btn" data-mode="timed">30s Challenge</button>
-                </div>
+            <div class="mode-grid">
+                <button class="mode-card selected" data-mode="static">
+                    <span class="mode-card-icon">🎯</span>
+                    <span class="mode-card-name">Classic</span>
+                    <span class="mode-card-desc">Static targets at mixed distances</span>
+                </button>
+                <button class="mode-card" data-mode="strafe">
+                    <span class="mode-card-icon">↔️</span>
+                    <span class="mode-card-name">Strafing</span>
+                    <span class="mode-card-desc">Targets moving left and right</span>
+                </button>
+                <button class="mode-card" data-mode="peek">
+                    <span class="mode-card-icon">👁️</span>
+                    <span class="mode-card-name">Peek-a-Boo</span>
+                    <span class="mode-card-desc">Targets that pop up briefly</span>
+                </button>
+                <button class="mode-card" data-mode="flick">
+                    <span class="mode-card-icon">⚡</span>
+                    <span class="mode-card-name">Flick</span>
+                    <span class="mode-card-desc">Single target, random position</span>
+                </button>
+                <button class="mode-card" data-mode="micro">
+                    <span class="mode-card-icon">🔬</span>
+                    <span class="mode-card-name">Precision</span>
+                    <span class="mode-card-desc">Small distant targets</span>
+                </button>
             </div>
-            <div class="mode-section">
-                <h3>Presets</h3>
-                <div class="mode-buttons">
-                    <button class="mode-btn preset-btn" data-preset="flick"><span class="preset-icon">⚡</span>Flick</button>
-                    <button class="mode-btn preset-btn" data-preset="tracking"><span class="preset-icon">🎯</span>Tracking</button>
-                    <button class="mode-btn preset-btn" data-preset="micro-adjust"><span class="preset-icon">🔬</span>Micro-Adjust</button>
-                </div>
-            </div>
-            <div class="mode-section">
-                <h3>Drills</h3>
-                <div class="mode-buttons">
-                    <button class="mode-btn drill-btn" data-mode="strafe">Strafing</button>
-                    <button class="mode-btn drill-btn" data-mode="peek">Peek-a-Boo</button>
-                    <button class="mode-btn drill-btn" data-mode="micro">Precision Micro</button>
-                </div>
-            </div>
-            <p class="mode-description">Click to select a mode</p>
+            <button class="mode-btn start-btn" id="btn-start">▶&nbsp;&nbsp;Start Round</button>
+            <p class="mode-hint">Click the range to capture your mouse · Esc to return here</p>
         `;
         this.overlay.appendChild(this.modePanel);
 
-        // Delegate all button clicks
-        this.modePanel.addEventListener('click', e => {
-            const btn = e.target.closest('button');
-            if (!btn) return;
-            const mode   = btn.dataset.mode;
-            const preset = btn.dataset.preset;
-            if (mode)   this.game.startMode(mode);
-            if (preset) this.game.startPreset(preset);
+        // Mode card selection
+        this.modePanel.querySelectorAll('.mode-card').forEach(card => {
+            card.addEventListener('click', () => {
+                this.modePanel.querySelectorAll('.mode-card').forEach(c => c.classList.remove('selected'));
+                card.classList.add('selected');
+                this._selectedMode = card.dataset.mode;
+            });
+        });
+
+        // Restore last selected mode highlight
+        const prev = this.modePanel.querySelector(`[data-mode="${this._selectedMode}"]`);
+        if (prev) {
+            this.modePanel.querySelectorAll('.mode-card').forEach(c => c.classList.remove('selected'));
+            prev.classList.add('selected');
+        }
+
+        document.getElementById('btn-start').addEventListener('click', () => {
             this.hideModePanel();
+            this.showTimer();
+            this.game.startMode(this._selectedMode);
         });
     }
 
     showModePanel() {
-        // Rebuild to refresh persistent stats
         this.modePanel?.remove();
         this._buildModePanel();
         this.modePanel.style.display = 'block';
+        this.hideTimer();
     }
 
     hideModePanel() {
         if (this.modePanel) this.modePanel.style.display = 'none';
     }
 
-    // ── Game-over screen ──────────────────────────────────────
+    // ── End screen ────────────────────────────────────────────
 
     showGameOver(finalStats) {
-        // Release pointer lock so buttons are clickable — suppress menu popup
         if (this.game.input) this.game.input._suppressMenu = true;
         document.exitPointerLock();
-        const reactionBlock = finalStats.avgReaction > 0 ? `
+
+        const acc   = finalStats.accuracy;
+        const grade = acc >= 90 ? { label: 'S', color: '#ffd700' }
+                    : acc >= 75 ? { label: 'A', color: '#00ff88' }
+                    : acc >= 60 ? { label: 'B', color: '#00ccff' }
+                    : acc >= 45 ? { label: 'C', color: '#ffaa00' }
+                    :             { label: 'D', color: '#ff4444' };
+
+        const rt = this._lastReaction;
+        const reactionBlock = (rt && rt.avg > 0) ? `
             <div class="reaction-stats-section">
                 <h3>Reaction Time</h3>
                 <div class="reaction-stats">
                     <div class="reaction-stat">
-                        <div class="reaction-stat-value">${finalStats.avgReaction.toFixed(0)}ms</div>
+                        <div class="reaction-stat-value">${rt.avg.toFixed(0)}ms</div>
                         <div class="reaction-stat-label">Average</div>
                     </div>
                     <div class="reaction-stat">
-                        <div class="reaction-stat-value best">${finalStats.bestReaction.toFixed(0)}ms</div>
+                        <div class="reaction-stat-value best">${rt.best < Infinity ? rt.best.toFixed(0) : '--'}ms</div>
                         <div class="reaction-stat-label">Best</div>
                     </div>
                     <div class="reaction-stat">
-                        <div class="reaction-stat-value">${finalStats.consistency.toFixed(0)}ms</div>
+                        <div class="reaction-stat-value">${rt.consistency.toFixed(0)}ms</div>
                         <div class="reaction-stat-label">Consistency</div>
                     </div>
                 </div>
@@ -176,44 +195,36 @@ class UIManager {
 
         const panel = _el('div', { id: 'gameover-panel' });
         panel.innerHTML = `
+            <div class="grade-badge" style="color:${grade.color};border-color:${grade.color}">${grade.label}</div>
             <h1>Time's Up!</h1>
             <div class="final-stats">
-                ${_finalStat(finalStats.hits,                'Hits')}
-                ${_finalStat(finalStats.shots,               'Shots')}
-                ${_finalStat(finalStats.accuracy.toFixed(1) + '%', 'Accuracy')}
+                ${_finalStat(finalStats.hits,                    'Hits')}
+                ${_finalStat(finalStats.shots,                   'Shots')}
+                ${_finalStat(finalStats.accuracy.toFixed(1)+'%', 'Accuracy')}
             </div>
             ${reactionBlock}
-            <div class="mode-buttons" style="margin-top:30px">
-                <button class="mode-btn" id="btn-retry">Try Again</button>
+            <div class="mode-buttons" style="margin-top:28px">
+                <button class="mode-btn start-btn" id="btn-retry">▶&nbsp;&nbsp;Play Again</button>
                 <button class="mode-btn" id="btn-menu">Main Menu</button>
             </div>
         `;
         this.overlay.appendChild(panel);
 
-        document.getElementById('btn-retry').onclick = () => {
+        document.getElementById('btn-retry').addEventListener('click', () => {
             panel.remove();
-            this.game.restartLastMode();
-        };
-        document.getElementById('btn-menu').onclick = () => {
+            this.showTimer();
+            this.game.startMode(this._selectedMode);
+        });
+        document.getElementById('btn-menu').addEventListener('click', () => {
             panel.remove();
             this.showModePanel();
-        };
+        });
     }
 
-    // ── Crosshair hint ────────────────────────────────────────
-
-    showCrosshairHint() {
-        const hint = _el('div', { id: 'crosshair-hint' });
-        hint.innerHTML = '<p>Aim with the crosshair</p><p>Left-click to shoot</p>';
-        this.overlay.appendChild(hint);
-        setTimeout(() => {
-            hint.style.opacity = '0';
-            setTimeout(() => hint.remove(), 1000);
-        }, 3000);
-    }
+    showCrosshairHint() {} // hint lives in start panel
 }
 
-// ── DOM helpers (module-private) ─────────────────────────────
+// ── DOM helpers ───────────────────────────────────────────────
 
 function _el(tag, attrs = {}) {
     const el = document.createElement(tag);
@@ -224,21 +235,6 @@ function _el(tag, attrs = {}) {
 function _setText(id, value) {
     const el = document.getElementById(id);
     if (el) el.textContent = value;
-}
-
-function _setReactionText(id, value, good, ok, warn) {
-    const el = document.getElementById(id);
-    if (!el) return;
-    if (value > 0) {
-        el.textContent = value.toFixed(0) + 'ms';
-        el.style.color = value < good ? '#00ff00'
-                       : value < ok   ? '#88ff00'
-                       : value < warn ? '#ffff00'
-                       : '#ff8800';
-    } else {
-        el.textContent = '--';
-        el.style.color = '#00ff00';
-    }
 }
 
 function _statCell(value, label) {
