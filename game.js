@@ -125,7 +125,8 @@ class Game {
             this._allDownTimer = (this._allDownTimer || 0) + dt;
             if (this._allDownTimer >= 0.6) {
                 this._allDownTimer = 0;
-                this.targets.forEach(t => t.reset());
+                // Re-shuffle positions on each respawn
+                this._reshuffleTargets();
             }
         } else {
             this._allDownTimer = 0;
@@ -307,6 +308,29 @@ class Game {
             const t = new Target(cfg.x, cfg.y, cfg.d, drillKey);
             if (drillKey === 'peek') t.peek.hiddenFor = i * 0.4;
             this.targets.push(t);
+        });
+    }
+
+    _reshuffleTargets() {
+        // Re-shuffle positions without destroying/recreating targets
+        const drillKey = this.mode;
+        const pool = GAME_CONFIG.DRILLS[drillKey] || GAME_CONFIG.DRILLS.static;
+        const count = this.targets.length;
+        
+        // Shuffle and select new positions
+        const shuffled = [...pool].sort(() => Math.random() - 0.5);
+        const selected = shuffled.slice(0, count);
+        
+        // Assign new positions to existing targets
+        this.targets.forEach((t, i) => {
+            const cfg = selected[i];
+            t.worldX = cfg.x;
+            t.worldY = cfg.y;
+            t.distance = cfg.d;
+            if (t.strafe.active) {
+                t.strafe.originX = cfg.x;
+            }
+            t.reset();
         });
     }
 
