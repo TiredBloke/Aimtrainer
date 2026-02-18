@@ -56,6 +56,14 @@ class Target {
 
         if (this.impactFlash > 0)
             this.impactFlash = Math.max(0, this.impactFlash - dt * 5);
+
+        // Update hit reaction timer (120ms duration)
+        if (this.hitReaction?.active) {
+            this.hitReaction.t += dt / 0.12;
+            if (this.hitReaction.t >= 1.0) {
+                this.hitReaction.active = false;
+            }
+        }
     }
 
     onHit(isCenterHit) {
@@ -65,6 +73,14 @@ class Target {
         this.fallTimer   = 0;
         this.impactFlash = 1;
         this.fallVel     = isCenterHit ? 120 : 80;
+
+        // Hit reaction state (consumed by renderer)
+        this.hitReaction = {
+            active:      true,
+            t:           0,              // 0→1 over 120ms
+            scaleStart:  1.18,           // pop scale
+            knockbackZ:  0.15,           // backward nudge distance
+        };
 
         let reactionMs = 0;
         if (this.reaction.activeAt > 0)

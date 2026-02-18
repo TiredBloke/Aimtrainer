@@ -10,6 +10,7 @@ class Renderer {
     constructor(game) {
         this.game    = game;
         this.targets3d = new Map(); // Target instance → THREE.Mesh
+        this.hitParticles = [];     // Active hit particles
 
         this._initThree();
         this._initScene();
@@ -321,89 +322,146 @@ class Renderer {
             cv.width = W; cv.height = H;
             const cx = cv.getContext('2d');
 
-            // Seeded-ish variation using seed parameter
-            const rng = (() => { let s = seed * 9301 + 49297; return () => { s = (s * 9301 + 49297) % 233280; return s / 233280; }; })();
+            const rng = (() => {
+                let s = seed * 9301 + 49297;
+                return () => { s = (s * 9301 + 49297) % 233280; return s / 233280; };
+            })();
 
             cx.clearRect(0, 0, W, H);
+            const mid = W / 2;
 
-            const cx0 = W / 2;     // trunk centre x
-            const trunkTop = H * 0.52;
-            const trunkBot = H * 0.98;
-
-            // Draw branch layers from bottom up — each layer is a triangle
-            // of foliage that overlaps the one below, like a real pine
-            const layers = 8;
-            for (let i = 0; i < layers; i++) {
-                const t   = i / (layers - 1);          // 0=bottom, 1=top
-                const y   = trunkTop + (trunkTop - H * 0.04) * (1 - t) - trunkTop * 0.1;
-                const w   = W * (0.46 - t * 0.30) * (0.9 + rng() * 0.2);
-                const h   = H * (0.13 + (1 - t) * 0.05);
-
-                // Irregular branch edge — draw a jagged triangle
-                cx.beginPath();
-                cx.moveTo(cx0, y - h);  // tip
-
-                // Right side — jagged steps
-                const steps = 5 + Math.floor(rng() * 3);
-                for (let s = 0; s <= steps; s++) {
-                    const sx  = cx0 + w * (s / steps);
-                    const sy  = y - h * 0.1 + (s % 2 === 0 ? rng() * h * 0.35 : rng() * h * 0.15);
-                    cx.lineTo(sx, sy);
-                }
-                cx.lineTo(cx0 + w * 0.12, y + h * 0.25);  // right base
-
-                // Left side mirrored
-                cx.lineTo(cx0 - w * 0.12, y + h * 0.25);
-                for (let s = steps; s >= 0; s--) {
-                    const sx  = cx0 - w * (s / steps);
-                    const sy  = y - h * 0.1 + (s % 2 === 0 ? rng() * h * 0.35 : rng() * h * 0.15);
-                    cx.lineTo(sx, sy);
-                }
-                cx.closePath();
-
-                // Colour varies: darker lower layers, lighter upper
-                const green = Math.floor(60 + t * 55 + rng() * 18);
-                const red   = Math.floor(14 + t * 22 + rng() * 10);
-                const blue  = Math.floor(8  + t * 10 + rng() * 8);
-
-                // Fill base colour
-                cx.fillStyle = `rgb(${red},${green},${blue})`;
-                cx.fill();
-
-                // Add subtle lighter highlight on upper-left of each layer
-                const hgrad = cx.createLinearGradient(cx0 - w, y - h, cx0 + w * 0.3, y);
-                hgrad.addColorStop(0, `rgba(${red+20},${green+22},${blue+8},0.35)`);
-                hgrad.addColorStop(1, 'rgba(0,0,0,0)');
-                cx.fillStyle = hgrad;
-                cx.fill();
-
-                // Dark underside shadow on bottom of each layer
-                const sgrad = cx.createLinearGradient(0, y, 0, y + h * 0.3);
-                sgrad.addColorStop(0, 'rgba(0,0,0,0.28)');
-                sgrad.addColorStop(1, 'rgba(0,0,0,0)');
-                cx.fillStyle = sgrad;
-                cx.fill();
-            }
-
-            // Trunk — dark tapered line
-            const trunkW = W * 0.025;
-            const tgrad = cx.createLinearGradient(cx0 - trunkW, trunkTop, cx0 + trunkW * 2, trunkBot);
-            tgrad.addColorStop(0, '#1a0d04');
-            tgrad.addColorStop(0.5, '#2e1808');
-            tgrad.addColorStop(1, '#1a0d04');
-            cx.fillStyle = tgrad;
+            // ── Trunk first (painted under foliage) ──
+            const trunkTop = H * 0.12;
+            const trunkBot = H * 0.99;
+            const twTop = W * 0.018;
+            const twBot = W * 0.032;
+            // Two-tone trunk: lighter left edge, darker right (light from upper-left)
+            const tg = cx.createLinearGradient(mid - twBot, 0, mid + twBot, 0);
+            tg.addColorStop(0,   '#3d2010');
+            tg.addColorStop(0.3, '#5a3018');
+            tg.addColorStop(0.7, '#3a1c0a');
+            tg.addColorStop(1,   '#1e0d04');
+            cx.fillStyle = tg;
             cx.beginPath();
-            cx.moveTo(cx0 - trunkW * 0.6, trunkTop);
-            cx.lineTo(cx0 + trunkW * 0.6, trunkTop);
-            cx.lineTo(cx0 + trunkW, trunkBot);
-            cx.lineTo(cx0 - trunkW, trunkBot);
+            cx.moveTo(mid - twTop, trunkTop);
+            cx.lineTo(mid + twTop, trunkTop);
+            cx.lineTo(mid + twBot, trunkBot);
+            cx.lineTo(mid - twBot, trunkBot);
             cx.closePath();
             cx.fill();
 
-            // Root flare — slight dark widening at ground
-            cx.fillStyle = 'rgba(15,8,2,0.55)';
+            // ── Branch layers bottom-to-top ──
+            // Each layer: irregular teardrop built with bezier curves
+            // Vertical spacing is irregular (not evenly spaced)
+            const layers = 11;
+            // Pre-compute irregular Y positions so layers cluster more at mid
+            const layerYs = [];
+            for (let i = 0; i < layers; i++) {
+                const t = i / (layers - 1);
+                // Non-linear: layers bunch toward top where crown is denser
+                const raw = H * 0.90 - Math.pow(t, 0.75) * H * 0.82;
+                layerYs.push(raw + (rng() - 0.5) * H * 0.04);
+            }
+            layerYs.sort((a, b) => b - a); // ensure bottom-up order
+
+            for (let i = 0; i < layers; i++) {
+                const t    = i / (layers - 1);          // 0=bottom, 1=top
+                const yMid = layerYs[i];
+                // Width narrows toward tip, with per-layer random variation
+                const maxW = W * (0.44 - t * 0.32) * (0.82 + rng() * 0.36);
+                // Height of each tier (flatter at bottom, pointer at top)
+                const tierH = H * (0.11 + (1 - t) * 0.06) * (0.8 + rng() * 0.4);
+                // Asymmetric lean: left side slightly different from right
+                const leanX = (rng() - 0.5) * W * 0.06;
+
+                // Colour: dark shadowed green at base → warm bright at top
+                // Bottom layers are darker (lit from above, shadowed underneath)
+                const green = Math.floor(52 + t * 68 + rng() * 14);
+                const red   = Math.floor(10 + t * 30 + rng() * 12);
+                const blue  = Math.floor(6  + t * 14 + rng() * 6);
+
+                // ── Draw the tier as a bezier-edged shape ──
+                // This gives organic curved branch tips instead of straight lines
+                cx.beginPath();
+
+                // Tip point (slightly off-centre for asymmetry)
+                const tipX = mid + leanX * 0.5;
+                const tipY = yMid - tierH * 0.85;
+                cx.moveTo(tipX, tipY);
+
+                // Right side: tip → two bezier bumps → base-right
+                // Each bump is a branch cluster
+                const bumps = 2 + Math.floor(rng() * 2);
+                for (let b = 0; b < bumps; b++) {
+                    const bt  = (b + 1) / (bumps + 1);
+                    const bx  = mid + leanX + maxW * bt;
+                    const by  = yMid - tierH * (0.3 - bt * 0.25) + rng() * tierH * 0.2;
+                    const cpx = mid + leanX + maxW * (bt - 0.5 / bumps) + rng() * maxW * 0.15;
+                    const cpy = by - tierH * (0.2 + rng() * 0.25);
+                    cx.quadraticCurveTo(cpx, cpy, bx, by);
+                }
+                // Curve into right base
+                cx.quadraticCurveTo(
+                    mid + leanX + maxW * 0.15, yMid + tierH * 0.3,
+                    mid + leanX + maxW * 0.08, yMid + tierH * 0.4
+                );
+
+                // Base — slight downward droop (branches droop under gravity)
+                cx.quadraticCurveTo(
+                    mid + leanX, yMid + tierH * 0.55,
+                    mid - leanX, yMid + tierH * 0.55
+                );
+
+                // Left side (mirror with independent rng)
+                cx.quadraticCurveTo(
+                    mid - leanX - maxW * 0.15, yMid + tierH * 0.3,
+                    mid - leanX - maxW * 0.08, yMid + tierH * 0.4
+                );
+                for (let b = bumps - 1; b >= 0; b--) {
+                    const bt  = (b + 1) / (bumps + 1);
+                    const bx  = mid - leanX - maxW * bt;
+                    const by  = yMid - tierH * (0.3 - bt * 0.25) + rng() * tierH * 0.2;
+                    const cpx = mid - leanX - maxW * (bt - 0.5 / bumps) - rng() * maxW * 0.15;
+                    const cpy = by - tierH * (0.2 + rng() * 0.25);
+                    cx.quadraticCurveTo(cpx, cpy, bx, by);
+                }
+                cx.closePath();
+
+                // Base fill
+                cx.fillStyle = `rgb(${red},${green},${blue})`;
+                cx.fill();
+
+                // Top-lit highlight: lighter upper surface (light from above-left)
+                const hlg = cx.createLinearGradient(mid - maxW, tipY, mid + maxW * 0.4, yMid);
+                hlg.addColorStop(0,   `rgba(${Math.min(red+35,255)},${Math.min(green+40,255)},${Math.min(blue+18,255)},0.55)`);
+                hlg.addColorStop(0.5, `rgba(${Math.min(red+15,255)},${Math.min(green+18,255)},${blue+5},0.20)`);
+                hlg.addColorStop(1,   'rgba(0,0,0,0)');
+                cx.fillStyle = hlg;
+                cx.fill();
+
+                // Underside shadow: dark band under each tier (AO-like)
+                const shg = cx.createLinearGradient(0, yMid + tierH * 0.1, 0, yMid + tierH * 0.55);
+                shg.addColorStop(0, 'rgba(0,0,0,0.42)');
+                shg.addColorStop(1, 'rgba(0,0,0,0)');
+                cx.fillStyle = shg;
+                cx.fill();
+
+                // Interior trunk shadow where branch meets trunk
+                const tsg = cx.createRadialGradient(mid, yMid, 0, mid, yMid, maxW * 0.25);
+                tsg.addColorStop(0,   'rgba(0,0,0,0.30)');
+                tsg.addColorStop(1,   'rgba(0,0,0,0)');
+                cx.fillStyle = tsg;
+                cx.fill();
+            }
+
+            // Overdraw trunk on top so it shows through canopy gaps
+            cx.fillStyle = tg;
             cx.beginPath();
-            cx.ellipse(cx0, trunkBot, trunkW * 2.5, H * 0.025, 0, 0, Math.PI * 2);
+            cx.moveTo(mid - twTop, trunkTop);
+            cx.lineTo(mid + twTop, trunkTop);
+            cx.lineTo(mid + twBot, trunkBot);
+            cx.lineTo(mid - twBot, trunkBot);
+            cx.closePath();
             cx.fill();
 
             const tex = new THREE.CanvasTexture(cv);
@@ -412,7 +470,7 @@ class Renderer {
         };
 
         // Pre-generate a small pool of varied textures to avoid clones
-        const texPool = [0, 1, 2, 3, 4].map(s => makeTreeTexture(s * 1337 + 42));
+        const texPool = [0,1,2,3,4,5,6].map(s => makeTreeTexture(s * 1337 + 42));
 
         // ── 2. Contact shadow (kept from before) ─────────────
         const shadowTex = (() => {
@@ -422,9 +480,9 @@ class Renderer {
             const cx   = cv.getContext('2d');
             const mid  = size / 2;
             const grad = cx.createRadialGradient(mid, mid, 0, mid, mid, mid);
-            grad.addColorStop(0.00, 'rgba(0,0,0,0.60)');
-            grad.addColorStop(0.40, 'rgba(0,0,0,0.25)');
-            grad.addColorStop(0.75, 'rgba(0,0,0,0.07)');
+            grad.addColorStop(0.00, 'rgba(0,0,0,0.30)');
+            grad.addColorStop(0.35, 'rgba(0,0,0,0.14)');
+            grad.addColorStop(0.70, 'rgba(0,0,0,0.04)');
             grad.addColorStop(1.00, 'rgba(0,0,0,0.00)');
             cx.fillStyle = grad;
             cx.fillRect(0, 0, size, size);
@@ -578,7 +636,23 @@ class Renderer {
             const z = -(5 + target.distance * 45);
             const y =  0.8 + target.worldY * 3;
 
-            group.position.set(x, y, z);
+            // Hit reaction: scale pop + knockback
+            let finalScale = target.baseSize / GAME_CONFIG.TARGET.BASE_SIZE;
+            let knockbackOffset = 0;
+
+            if (target.hitReaction?.active) {
+                const t  = Math.min(target.hitReaction.t, 1.0);
+                // Ease-out cubic: 1 - (1-t)^3
+                const ease = 1 - Math.pow(1 - t, 3);
+                // Scale: 1.18 → 1.0
+                const reactScale = target.hitReaction.scaleStart + (1.0 - target.hitReaction.scaleStart) * ease;
+                finalScale *= reactScale;
+                // Knockback: 0.15 → 0
+                knockbackOffset = target.hitReaction.knockbackZ * (1 - ease);
+            }
+
+            group.position.set(x, y, z + knockbackOffset);
+            group.scale.setScalar(finalScale);
 
             if (target.isFalling) {
                 group.rotation.x = target.fallAngle * Math.PI / 180;
@@ -588,16 +662,10 @@ class Renderer {
                 group.rotation.z = target.swingAngle * Math.PI / 180;
             }
 
-            const scale = target.baseSize / GAME_CONFIG.TARGET.BASE_SIZE;
-            group.scale.setScalar(scale);
-
-            // Impact flash
+            // Impact flash — bright orange fade
             if (target.impactFlash > 0) {
-                disc.material.emissive.setRGB(
-                    target.impactFlash,
-                    target.impactFlash * 0.8,
-                    target.impactFlash * 0.4
-                );
+                const f = target.impactFlash;
+                disc.material.emissive.setRGB(f, f * 0.67, 0); // 0xffaa00 scaled by flash
             } else {
                 disc.material.emissive.setRGB(0, 0, 0);
             }
@@ -721,10 +789,105 @@ class Renderer {
         return { hit: true, target: hitTarget, isCenterHit };
     }
 
+    // ── Hit particles ─────────────────────────────────────────
+
+    /**
+     * Spawn 12 tiny tetrahedron fragments on target hit.
+     * Inherits target material colour, random outward velocity, gravity.
+     */
+    spawnHitParticles(target) {
+        const group = this.targets3d.get(target);
+        if (!group) return;
+
+        const disc = group.children[0];
+        const pos  = group.position.clone();
+        
+        // Extract base colour from target material (ignoring emissive flash)
+        const mat     = disc.material;
+        const baseCol = mat.map ? new THREE.Color(0xdddddd) : mat.color.clone();
+
+        for (let i = 0; i < 12; i++) {
+            const size = 0.04 + Math.random() * 0.04;
+            const geo  = new THREE.TetrahedronGeometry(size);
+            const pmat = new THREE.MeshStandardMaterial({
+                color:     baseCol,
+                roughness: 0.7,
+                metalness: 0.0,
+            });
+            const mesh = new THREE.Mesh(geo, pmat);
+
+            // Random outward velocity (burst pattern)
+            const angle = Math.random() * Math.PI * 2;
+            const speed = 1.5 + Math.random() * 2.5;
+            const vx = Math.cos(angle) * speed;
+            const vy = (0.5 + Math.random() * 1.5) * speed; // upward bias
+            const vz = Math.sin(angle) * speed * 0.5;       // less depth spread
+
+            mesh.position.copy(pos);
+            this.scene.add(mesh);
+
+            this.hitParticles.push({
+                mesh,
+                geo,
+                mat: pmat,
+                vel: { x: vx, y: vy, z: vz },
+                life: 0,      // 0 → 350ms
+                spin: {
+                    x: (Math.random() - 0.5) * 20,
+                    y: (Math.random() - 0.5) * 20,
+                    z: (Math.random() - 0.5) * 20,
+                }
+            });
+        }
+    }
+
+    /**
+     * Update and cleanup hit particles.
+     * Called each frame in render().
+     */
+    _updateHitParticles(dt) {
+        const LIFETIME = 0.35;  // 350ms
+        const GRAVITY  = -9.8;
+
+        for (let i = this.hitParticles.length - 1; i >= 0; i--) {
+            const p = this.hitParticles[i];
+            p.life += dt;
+
+            if (p.life >= LIFETIME) {
+                // Cleanup
+                this.scene.remove(p.mesh);
+                p.geo.dispose();
+                p.mat.dispose();
+                this.hitParticles.splice(i, 1);
+                continue;
+            }
+
+            // Physics
+            p.vel.y += GRAVITY * dt;
+            p.mesh.position.x += p.vel.x * dt;
+            p.mesh.position.y += p.vel.y * dt;
+            p.mesh.position.z += p.vel.z * dt;
+
+            // Spin
+            p.mesh.rotation.x += p.spin.x * dt;
+            p.mesh.rotation.y += p.spin.y * dt;
+            p.mesh.rotation.z += p.spin.z * dt;
+
+            // Fade out in last 100ms
+            const fadeStart = LIFETIME - 0.1;
+            if (p.life > fadeStart) {
+                const fadeT = (p.life - fadeStart) / 0.1;
+                p.mat.opacity = 1 - fadeT;
+                p.mat.transparent = true;
+            }
+        }
+    }
+
     // ── Main render ───────────────────────────────────────────
 
     render() {
-        const t = this.clock.getElapsedTime();
+        const t  = this.clock.getElapsedTime();
+        const dt = this.clock.getDelta();
 
         // Billboard wind sway — gentle rotation on the whole group
         if (this.billboardTrees) {
@@ -734,6 +897,7 @@ class Renderer {
             });
         }
 
+        this._updateHitParticles(dt);
         this.syncTargets();
         this.renderer.render(this.scene, this.camera);
         this._renderHUD();
