@@ -604,7 +604,7 @@ class Renderer {
             // ── Target management ─────────────────────────────────────
 
     /** Call every frame — syncs 3D meshes with game target list */
-    syncTargets() {
+    syncTargets(dt) {
         const game    = this.game;
         const current = new Set(game.targets);
 
@@ -705,7 +705,15 @@ class Renderer {
 
         // Update despawn animations and cleanup
         this.targets3d.forEach((group, target) => {
+            // Increment spawn animation
+            if (group.userData.spawnAnim.active) {
+                group.userData.spawnAnim.t += dt / 0.12;
+            }
+            
+            // Increment and handle despawn animation
             if (!group.userData.despawnAnim.active) return;
+            
+            group.userData.despawnAnim.t += dt / 0.12; // increment HERE
 
             const shadow = group.children[1];
             const t      = group.userData.despawnAnim.t;
@@ -975,34 +983,20 @@ class Renderer {
     // ── Main render ───────────────────────────────────────────
 
     render() {
-        const t  = this.clock.getElapsedTime();
-        const dt = this.clock.getDelta();
+        const now = this.clock.getElapsedTime();
+        const dt  = Math.min(now - (this._lastRenderTime || now), 0.1); // cap at 100ms
+        this._lastRenderTime = now;
 
         // Billboard wind sway — gentle rotation on the whole group
         if (this.billboardTrees) {
             this.billboardTrees.forEach(({ group, phase, baseRX, baseRZ }) => {
-                group.rotation.x = baseRX + Math.sin(t * 1.4 + phase)          * 0.012;
-                group.rotation.z = baseRZ + Math.sin(t * 1.1 + phase + 1.2)    * 0.018;
+                group.rotation.x = baseRX + Math.sin(now * 1.4 + phase)          * 0.012;
+                group.rotation.z = baseRZ + Math.sin(now * 1.1 + phase + 1.2)    * 0.018;
             });
         }
 
         this._updateHitParticles(dt);
-
-        // Update target shadow spawn/despawn animations
-        this.targets3d.forEach(group => {
-            if (group.userData.spawnAnim.active) {
-                group.userData.spawnAnim.t += dt / 0.12; // 120ms
-            }
-            if (group.userData.despawnAnim.active) {
-                const oldT = group.userData.despawnAnim.t;
-                group.userData.despawnAnim.t += dt / 0.12; // 120ms
-                if (oldT < 0.05 && Math.random() < 0.2) {
-                    console.log('DESPAWN timer update: dt=' + dt.toFixed(4) + ', oldT=' + oldT.toFixed(2) + ', newT=' + group.userData.despawnAnim.t.toFixed(2));
-                }
-            }
-        });
-
-        this.syncTargets();
+        this.syncTargets(dt);
         this.renderer.render(this.scene, this.camera);
         this._renderHUD();
     }
