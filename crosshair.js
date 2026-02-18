@@ -40,8 +40,22 @@ const CrosshairSettings = (() => {
         save();
     }
 
-    function draw(ctx, cx, cy, spreadRatio = 0) {
-        const col     = COLORS[_color];
+    function draw(ctx, cx, cy, spreadRatio = 0, brightness = 0) {
+        // Lerp color toward white based on streak brightness (0→1)
+        let col = COLORS[_color];
+        if (brightness > 0) {
+            // Parse the rgba string and lerp toward white
+            const match = col.match(/rgba?\((\d+),(\d+),(\d+)/);
+            if (match) {
+                const r = parseInt(match[1]);
+                const g = parseInt(match[2]);
+                const b = parseInt(match[3]);
+                const nr = Math.round(r + (255 - r) * brightness);
+                const ng = Math.round(g + (255 - g) * brightness);
+                const nb = Math.round(b + (255 - b) * brightness);
+                col = `rgba(${nr},${ng},${nb},0.92)`;
+            }
+        }
         const outline = 'rgba(0,0,0,0.65)';
 
         ctx.save();

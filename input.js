@@ -73,7 +73,7 @@ class InputHandler {
 
         if (result.hit) {
             const reactionMs = result.target.onHit(result.isCenterHit);
-            this.game.audio.playMetalPing(result.target.distance, result.isCenterHit);
+            this.game.audio.playMetalPing(result.target.distance, result.isCenterHit, this.game.streakEffects.hitSoundRate);
             this.game.recordShot(true, reactionMs);
             // Trigger particle burst
             this.game.renderer.spawnHitParticles(result.target);

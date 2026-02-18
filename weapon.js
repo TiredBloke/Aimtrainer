@@ -80,8 +80,8 @@ class Weapon {
 
     // ── Crosshair rendering ───────────────────────────────────
 
-    drawDynamicCrosshair(ctx, cx, cy) {
+    drawDynamicCrosshair(ctx, cx, cy, brightness = 0) {
         const spreadRatio = this.spread.current / GAME_CONFIG.WEAPON.SPREAD.MAX;
-        CrosshairSettings.draw(ctx, cx, cy, spreadRatio);
+        CrosshairSettings.draw(ctx, cx, cy, spreadRatio, brightness);
     }
 }

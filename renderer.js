@@ -613,7 +613,6 @@ class Renderer {
             if (!current.has(target)) {
                 // Start despawn animation instead of instant removal
                 if (!group.userData.despawnAnim.active) {
-                    console.log('DESPAWN STARTED for target at', target.worldX, target.distance);
                     group.userData.despawnAnim.active = true;
                     group.userData.despawnAnim.t = 0;
                 }
@@ -663,7 +662,6 @@ class Renderer {
                 group.rotation.z = 0;
                 // DEBUG: log first few frames of fall
                 if (target.fallAngle > -5) {
-                    console.log('FALL: angle=' + target.fallAngle.toFixed(2) + ', rotation.x=' + group.rotation.x.toFixed(3));
                 }
             } else {
                 group.rotation.x = 0;
@@ -723,7 +721,6 @@ class Renderer {
             }
 
             if (t >= 1.0) {
-                console.log('DESPAWN COMPLETE - removing mesh for target');
                 this.scene.remove(group);
                 this.targets3d.delete(target);
                 // Dispose geometries and materials
@@ -736,7 +733,6 @@ class Renderer {
                 });
             } else {
                 if (Math.random() < 0.1) { // log occasionally
-                    console.log('DESPAWN animating: t=' + t.toFixed(2));
                 }
             }
         });
@@ -1030,7 +1026,7 @@ class Renderer {
 
         const cx = game.input.crosshairX;
         const cy = game.input.crosshairY;
-        game.weapon.drawDynamicCrosshair(ctx, cx, cy);
+        game.weapon.drawDynamicCrosshair(ctx, cx, cy, game.streakEffects.crosshairBrightness);
     }
 
     // ── Resize ────────────────────────────────────────────────

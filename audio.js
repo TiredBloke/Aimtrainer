@@ -37,10 +37,11 @@ class AudioManager {
      * Steel plate hit — procedural metal impact.
      * @param {number} distance  0 (close) → 1 (far)
      * @param {boolean} isCenterHit
+     * @param {number} playbackRate 1.0 default, up to 1.25 for high streaks
      */
-    playMetalPing(distance, isCenterHit) {
+    playMetalPing(distance, isCenterHit, playbackRate = 1.0) {
         if (!this.ready) return;
-        this._steelPlateHit(this.ctx.currentTime, distance, isCenterHit);
+        this._steelPlateHit(this.ctx.currentTime, distance, isCenterHit, playbackRate);
     }
 
     setVolume(v) {
@@ -84,13 +85,13 @@ class AudioManager {
 
     // ── Steel plate hit ───────────────────────────────────────
 
-    _steelPlateHit(t, distance, isCenterHit) {
+    _steelPlateHit(t, distance, isCenterHit, playbackRate = 1.0) {
         const ctx      = this.ctx;
         const nearness = 1.0 - distance;
         const vol      = (0.30 + nearness * 0.45) * GAME_CONFIG.AUDIO.METAL_HIT_VOLUME;
 
-        // Per-hit pitch randomisation ±5%
-        const pitchVar = 0.95 + Math.random() * 0.10;
+        // Per-hit pitch randomisation ±5%, plus playbackRate multiplier
+        const pitchVar = (0.95 + Math.random() * 0.10) * playbackRate;
 
         // Per-hit decay randomisation ±10%
         const decayVar = 0.90 + Math.random() * 0.20;

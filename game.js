@@ -29,6 +29,15 @@ class Game {
         this._presetCfg     = null;
         this._presetSpawnWait = 0;
 
+        // Streak system
+        this.streak = 0;
+        this.streakEffects = {
+            crosshairBrightness: 0,   // 0→1 lerped
+            spawnIntervalMult:   1.0, // 1.0→0.8 at 10+
+            targetScaleMult:     1.0, // 1.0→0.9 at 15+
+            hitSoundRate:        1.0, // 1.0→1.25 at 20+
+        };
+
         window.addEventListener('resize', () => {
             this.width  = window.innerWidth;
             this.height = window.innerHeight;
@@ -140,6 +149,8 @@ class Game {
         s.shots++;
         if (hit) {
             s.hits++;
+            this.streak++;
+            this._updateStreakEffects();
             if (reactionMs > 0 && reactionMs < 5000) {
                 s.reactionTimes.push(reactionMs);
                 if (reactionMs < s.bestReaction) s.bestReaction = reactionMs;
@@ -151,10 +162,69 @@ class Game {
                     s.consistency = Math.sqrt(v);
                 }
             }
+        } else {
+            // Miss — break streak
+            if (this.streak > 0) {
+                this.streak = 0;
+                this._breakStreak();
+            }
         }
         const accuracy = s.shots > 0 ? (s.hits / s.shots) * 100 : 0;
         this.ui.updateStats(s.shots, s.hits, accuracy);
         this.ui.updateReactionStats(s.avgReaction, s.bestReaction, s.consistency);
+    }
+
+    // ── Streak system ─────────────────────────────────────────
+
+    _updateStreakEffects() {
+        const e = this.streakEffects;
+        const s = this.streak;
+
+        // Crosshair brightness: 5+ streak, lerp to white
+        e.crosshairBrightness = s >= 5 ? Math.min((s - 5) / 15, 1.0) : 0;
+
+        // Spawn interval: 10+ streak, reduce by 20%
+        e.spawnIntervalMult = s >= 10 ? 0.8 : 1.0;
+
+        // Target scale: 15+ streak, reduce by 10%
+        e.targetScaleMult = s >= 15 ? 0.9 : 1.0;
+
+        // Hit sound rate: 20+ streak, increase up to 1.25
+        if (s >= 20) {
+            e.hitSoundRate = 1.0 + Math.min((s - 20) / 40, 0.25);
+        } else {
+            e.hitSoundRate = 1.0;
+        }
+    }
+
+    _breakStreak() {
+        // Smoothly lerp effects back to defaults over 400ms
+        const e = this.streakEffects;
+        const startValues = {
+            brightness: e.crosshairBrightness,
+            interval:   e.spawnIntervalMult,
+            scale:      e.targetScaleMult,
+            rate:       e.hitSoundRate,
+        };
+
+        const duration = 0.4; // 400ms
+        let elapsed = 0;
+
+        const lerp = () => {
+            elapsed += this.deltaTime;
+            const t = Math.min(elapsed / duration, 1.0);
+            const ease = t * t * (3 - 2 * t); // smoothstep
+
+            e.crosshairBrightness = startValues.brightness * (1 - ease);
+            e.spawnIntervalMult   = startValues.interval   + (1.0 - startValues.interval)   * ease;
+            e.targetScaleMult     = startValues.scale      + (1.0 - startValues.scale)      * ease;
+            e.hitSoundRate        = startValues.rate       + (1.0 - startValues.rate)       * ease;
+
+            if (t < 1.0) {
+                requestAnimationFrame(lerp);
+            }
+        };
+        lerp();
     }
 
     // ── Mode start — always 30 seconds ────────────────────────
