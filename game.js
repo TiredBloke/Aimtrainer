@@ -287,8 +287,23 @@ class Game {
 
     _createTargets(drillKey) {
         this.targets = [];
-        const layouts = GAME_CONFIG.DRILLS[drillKey] || GAME_CONFIG.DRILLS.static;
-        layouts.forEach((cfg, i) => {
+        const pool = GAME_CONFIG.DRILLS[drillKey] || GAME_CONFIG.DRILLS.static;
+        
+        // Define how many targets to spawn per mode
+        const spawnCount = {
+            static: 5,
+            strafe: 5,
+            peek:   5,
+            micro:  6
+        };
+        
+        const count = spawnCount[drillKey] || 5;
+        
+        // Shuffle the pool and take first N positions
+        const shuffled = [...pool].sort(() => Math.random() - 0.5);
+        const selected = shuffled.slice(0, count);
+        
+        selected.forEach((cfg, i) => {
             const t = new Target(cfg.x, cfg.y, cfg.d, drillKey);
             if (drillKey === 'peek') t.peek.hiddenFor = i * 0.4;
             this.targets.push(t);
