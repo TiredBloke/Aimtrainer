@@ -994,7 +994,11 @@ class Renderer {
                 group.userData.spawnAnim.t += dt / 0.12; // 120ms
             }
             if (group.userData.despawnAnim.active) {
+                const oldT = group.userData.despawnAnim.t;
                 group.userData.despawnAnim.t += dt / 0.12; // 120ms
+                if (oldT < 0.05 && Math.random() < 0.2) {
+                    console.log('DESPAWN timer update: dt=' + dt.toFixed(4) + ', oldT=' + oldT.toFixed(2) + ', newT=' + group.userData.despawnAnim.t.toFixed(2));
+                }
             }
         });
 
