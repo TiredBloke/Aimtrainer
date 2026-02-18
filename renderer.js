@@ -609,10 +609,13 @@ class Renderer {
         const current = new Set(game.targets);
 
         // Remove meshes for targets no longer in game
-        this.targets3d.forEach((mesh, target) => {
+        this.targets3d.forEach((group, target) => {
             if (!current.has(target)) {
-                this.scene.remove(mesh);
-                this.targets3d.delete(target);
+                // Start despawn animation instead of instant removal
+                if (!group.userData.despawnAnim.active) {
+                    group.userData.despawnAnim.active = true;
+                    group.userData.despawnAnim.t = 0;
+                }
             }
         });
 
@@ -673,6 +676,51 @@ class Renderer {
             if (target.reaction?.isGlowing) {
                 disc.material.emissive.setRGB(0.4, 0.3, 0.0);
             }
+
+            // Shadow blob — tracks target X/Z, stays at ground height
+            const shadow = group.children[1];
+            if (shadow) {
+                // Position shadow on ground directly below target
+                shadow.position.x = 0;  // relative to group, so 0
+                shadow.position.y = -y; // offset from group Y to reach ground
+                shadow.position.z = 0;
+
+                // Spawn animation: scale 0.3 → 1.0 over 120ms
+                if (group.userData.spawnAnim.active) {
+                    const t    = Math.min(group.userData.spawnAnim.t, 1.0);
+                    const ease = t * t * (3 - 2 * t); // smoothstep
+                    const s    = 0.3 + (1.0 - 0.3) * ease;
+                    shadow.scale.setScalar(s);
+                    if (t >= 1.0) {
+                        group.userData.spawnAnim.active = false;
+                    }
+                }
+            }
+        });
+
+        // Update despawn animations and cleanup
+        this.targets3d.forEach((group, target) => {
+            if (!group.userData.despawnAnim.active) return;
+
+            const shadow = group.children[1];
+            const t      = group.userData.despawnAnim.t;
+
+            if (shadow) {
+                shadow.material.opacity = 0.18 * (1 - t);
+            }
+
+            if (t >= 1.0) {
+                this.scene.remove(group);
+                this.targets3d.delete(target);
+                // Dispose geometries and materials
+                group.traverse(obj => {
+                    if (obj.geometry) obj.geometry.dispose();
+                    if (obj.material) {
+                        if (obj.material.map) obj.material.map.dispose();
+                        obj.material.dispose();
+                    }
+                });
+            }
         });
     }
 
@@ -693,6 +741,31 @@ class Renderer {
         disc.castShadow = true;
 
         group.add(disc);
+
+        // Ground shadow blob
+        const shadowRadius = radius * 1.3;  // slightly larger than target
+        const shadowGeo    = new THREE.CircleGeometry(shadowRadius, 24);
+        const shadowMat    = new THREE.MeshBasicMaterial({
+            color:       0x000000,
+            transparent: true,
+            opacity:     0.18,
+            depthWrite:  false,
+        });
+        const shadow = new THREE.Mesh(shadowGeo, shadowMat);
+        shadow.rotation.x = -Math.PI / 2;  // flat on ground
+        shadow.renderOrder = -1;           // draw before other objects to avoid z-fighting
+        group.add(shadow);
+
+        // Track spawn animation state on the group itself
+        group.userData.spawnAnim = {
+            active: true,
+            t:      0,   // 0→1 over 120ms
+        };
+        group.userData.despawnAnim = {
+            active: false,
+            t:      0,
+        };
+
         return group;
     }
 
@@ -802,26 +875,32 @@ class Renderer {
         const disc = group.children[0];
         const pos  = group.position.clone();
         
-        // Extract base colour from target material (ignoring emissive flash)
-        const mat     = disc.material;
-        const baseCol = mat.map ? new THREE.Color(0xdddddd) : mat.color.clone();
+        // Use bright visible colours instead of target colour
+        const particleColors = [
+            new THREE.Color(0xff6600), // bright orange
+            new THREE.Color(0xffaa00), // yellow-orange
+            new THREE.Color(0xdddddd), // white
+        ];
 
         for (let i = 0; i < 12; i++) {
-            const size = 0.04 + Math.random() * 0.04;
+            const size = 0.12 + Math.random() * 0.08;  // much larger: 0.12-0.20
             const geo  = new THREE.TetrahedronGeometry(size);
+            const col  = particleColors[Math.floor(Math.random() * particleColors.length)];
             const pmat = new THREE.MeshStandardMaterial({
-                color:     baseCol,
-                roughness: 0.7,
+                color:     col,
+                emissive:  col,
+                emissiveIntensity: 0.4,  // glow so they're visible
+                roughness: 0.6,
                 metalness: 0.0,
             });
             const mesh = new THREE.Mesh(geo, pmat);
 
-            // Random outward velocity (burst pattern)
+            // Slower, more visible velocities
             const angle = Math.random() * Math.PI * 2;
-            const speed = 1.5 + Math.random() * 2.5;
+            const speed = 0.8 + Math.random() * 1.2;  // slower: 0.8-2.0
             const vx = Math.cos(angle) * speed;
-            const vy = (0.5 + Math.random() * 1.5) * speed; // upward bias
-            const vz = Math.sin(angle) * speed * 0.5;       // less depth spread
+            const vy = (0.3 + Math.random() * 0.8) * speed;  // upward
+            const vz = Math.sin(angle) * speed * 0.8;        // more depth spread
 
             mesh.position.copy(pos);
             this.scene.add(mesh);
@@ -833,9 +912,9 @@ class Renderer {
                 vel: { x: vx, y: vy, z: vz },
                 life: 0,      // 0 → 350ms
                 spin: {
-                    x: (Math.random() - 0.5) * 20,
-                    y: (Math.random() - 0.5) * 20,
-                    z: (Math.random() - 0.5) * 20,
+                    x: (Math.random() - 0.5) * 12,
+                    y: (Math.random() - 0.5) * 12,
+                    z: (Math.random() - 0.5) * 12,
                 }
             });
         }
@@ -898,6 +977,17 @@ class Renderer {
         }
 
         this._updateHitParticles(dt);
+
+        // Update target shadow spawn/despawn animations
+        this.targets3d.forEach(group => {
+            if (group.userData.spawnAnim.active) {
+                group.userData.spawnAnim.t += dt / 0.12; // 120ms
+            }
+            if (group.userData.despawnAnim.active) {
+                group.userData.despawnAnim.t += dt / 0.12; // 120ms
+            }
+        });
+
         this.syncTargets();
         this.renderer.render(this.scene, this.camera);
         this._renderHUD();
